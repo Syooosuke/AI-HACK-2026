@@ -20,9 +20,6 @@ async def validate_image(
 ) -> ImageValidationResult:
     has_reference = bool(task.reference_images)
 
-    def recorder(**kwargs: object) -> None:
-        ai_invocation_repo.create(session, **kwargs)  # type: ignore[arg-type]
-
     result = await orca.complete_json(
         purpose="image_validation",
         system_prompt=SYSTEM_PROMPT,
@@ -32,7 +29,8 @@ async def validate_image(
         tier="vision",
         related_type="submission",
         related_id=submission.id,
-        recorder=recorder,
+        # 検品が失敗してロールバックされても監査ログは残す
+        recorder=ai_invocation_repo.create_autonomous,
         # スタブが再撮影ループを再現するために提出回数を渡す（docs/04-ai-pipeline.md 1.4）
         context={"attempt_no": submission.attempt_no},
     )

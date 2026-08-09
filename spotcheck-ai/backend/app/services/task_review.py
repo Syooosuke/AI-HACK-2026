@@ -12,12 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.storage import StorageBackend
 from app.models import Task, TaskStatus
+from app.models.task import MAX_REFERENCE_IMAGES
 from app.prompts.task_review import SYSTEM_PROMPT, build_user_prompt
 from app.repositories import ai_invocation_repo
 from app.schemas.ai import TaskReviewResult
 from app.schemas.task import ReviewChecks, ReviewResult
-from app.services.orca_client import OrcaClient
+from app.services.orca_client import ImageInput, OrcaClient, encode_image_for_vlm
 
 logger = get_logger(__name__)
 
@@ -47,24 +49,55 @@ DECISION_TO_STATUS = {
 }
 
 
-async def review_task(session: Session, task: Task, orca: OrcaClient) -> ReviewOutcome:
+async def _load_reference_images(
+    task: Task, storage: StorageBackend | None, *, skip: bool
+) -> list[ImageInput]:
+    """参考画像（最大3枚）を base64 にして返す。取得に失敗した画像はスキップする。"""
+    if skip or storage is None or not task.reference_images:
+        return []
+    settings = get_settings()
+    images: list[ImageInput] = []
+    for reference in task.reference_images[:MAX_REFERENCE_IMAGES]:
+        try:
+            payload = await storage.download(
+                bucket=settings.storage_bucket_processed, key=reference.image_url
+            )
+        except Exception:  # noqa: BLE001 - 参考画像が取れなくても審査自体は続行する
+            logger.warning(
+                "参考画像を取得できませんでした",
+                extra={"task_id": str(task.id), "key": reference.image_url},
+            )
+            continue
+        images.append(
+            ImageInput(url=reference.image_url, base64_data=encode_image_for_vlm(payload))
+        )
+    return images
+
+
+async def review_task(
+    session: Session,
+    task: Task,
+    orca: OrcaClient,
+    storage: StorageBackend | None = None,
+) -> ReviewOutcome:
     """依頼を審査し、tasks の審査結果カラムと status を更新する。"""
     settings = get_settings()
     has_reference_images = bool(task.reference_images)
-
-    def recorder(**kwargs: object) -> None:
-        ai_invocation_repo.create(session, **kwargs)  # type: ignore[arg-type]
+    # スタブモードでは画像を送らないため、無駄なダウンロードを避ける
+    images = await _load_reference_images(task, storage, skip=orca.is_stub)
 
     orca_result = await orca.complete_json(
         purpose="task_review",
         system_prompt=SYSTEM_PROMPT,
         user_prompt=build_user_prompt(task, has_reference_images=has_reference_images),
         response_schema=TaskReviewResult,
+        images=images or None,
         # 参考画像があるときは vision ルーターへ切り替える（docs/04-ai-pipeline.md 2.1）
-        tier="vision" if has_reference_images else "light",
+        tier="vision" if images else "light",
         related_type="task",
         related_id=task.id,
-        recorder=recorder,
+        # 審査が失敗して業務トランザクションがロールバックしても監査ログは残す
+        recorder=ai_invocation_repo.create_autonomous,
     )
     result = orca_result.parsed
     assert isinstance(result, TaskReviewResult)

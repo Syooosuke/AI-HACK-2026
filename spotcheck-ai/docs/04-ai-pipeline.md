@@ -243,11 +243,29 @@ score < TASK_REVIEW_SCORE_THRESHOLD (70)  → needs_info
 
 【要約 summary】依頼内容を60文字以内の日本語で要約してください。
 
+【重複・類似チェック duplication】同一の被写体・地点に対する重複依頼と判断できる場合のみ "fail"、判断できなければ "pass" としてください。この項目は画面②の表示にのみ使われます。
+
 decision は次の基準で決めてください。
 - safety または risk が "fail" → "rejected"
 - validity が "fail"、または score が70未満 → "needs_info"
 - それ以外 → "approved"
+
+【出力フォーマット】次のキーだけを持つJSONオブジェクトを出力してください。
+{
+  "decision": "approved" | "needs_info" | "rejected",
+  "score": 0〜100の整数,
+  "safety": "pass" | "fail",
+  "validity": "pass" | "fail",
+  "risk": "pass" | "fail",
+  "duplication": "pass" | "fail",
+  "rejection_reason": 文字列 または null,
+  "missing_info": 文字列の配列,
+  "summary": 文字列
+}
 ```
+
+> `duplication` と【出力フォーマット】は 2.2 の `TaskReviewResult` を満たすために必要なため、
+> 実装時に追記した。キー名はスキーマと1対1で対応させること。
 
 ### 2.5 ユーザープロンプト（テンプレート）
 

@@ -7,7 +7,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.db import get_session_factory
+from app.core.logging import get_logger
 from app.models import AiInvocation
+
+logger = get_logger(__name__)
 
 
 def create(
@@ -38,3 +42,16 @@ def create(
     session.add(invocation)
     session.flush()
     return invocation
+
+
+def create_autonomous(**kwargs: Any) -> None:
+    """独立したトランザクションで記録する。
+
+    AI呼び出しが失敗すると業務トランザクションはロールバックされるが、
+    監査ログは残す必要があるため（docs/04-ai-pipeline.md 1.3「全呼び出しについて記録する」）、
+    呼び出し元のセッションとは切り離してコミットする。
+    """
+    factory = get_session_factory()
+    with factory() as session:
+        create(session, **kwargs)
+        session.commit()

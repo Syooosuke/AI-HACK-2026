@@ -116,7 +116,12 @@ async def resubmit_task(
 ) -> TaskReviewResponse:
     """補足情報を追記して再審査（画面②の needs_info からの再提出）。"""
     return await task_service.resubmit_task(
-        session, client=client, task_id=task_id, payload=payload, orca=get_orca_client()
+        session,
+        client=client,
+        task_id=task_id,
+        payload=payload,
+        orca=get_orca_client(),
+        storage=get_storage(),
     )
 
 

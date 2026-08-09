@@ -109,7 +109,7 @@ async def create_task(
         task_repo.add_reference_image(session, task_id=task.id, image_url=key, sort_order=index)
     session.refresh(task)
 
-    outcome = await task_review.review_task(session, task, orca)
+    outcome = await task_review.review_task(session, task, orca, storage)
     return TaskReviewResponse(task=_to_summary(task), review=outcome.review)
 
 
@@ -120,6 +120,7 @@ async def resubmit_task(
     task_id: uuid.UUID,
     payload: TaskResubmitRequest,
     orca: OrcaClient,
+    storage: StorageBackend,
 ) -> TaskReviewResponse:
     task = _get_owned_task(session, task_id, client)
     if task.status is not TaskStatus.NEEDS_INFO:
@@ -137,7 +138,7 @@ async def resubmit_task(
     task.status = TaskStatus.SCREENING
     session.flush()
 
-    outcome = await task_review.review_task(session, task, orca)
+    outcome = await task_review.review_task(session, task, orca, storage)
     return TaskReviewResponse(task=_to_summary(task), review=outcome.review)
 
 

@@ -1,17 +1,27 @@
 """AI呼び出しの唯一の窓口（docs/04-ai-pipeline.md 1節）。
 
-Phase 1 では**スタブモードのみ**を実装する。実HTTP呼び出し（1.1節の OpenAI互換API）は
-Phase 3 で実装する。呼び出し側のコードは変更不要な設計にしてある。
+OrcaRouter は OpenAI Chat Completions 互換API。OpenAI SDK は使わず httpx で直接呼ぶ。
+`model` に渡すのは**ルーター名**であり、モデル名をこのコードへ直書きしてはならない。
+
+`ORCA_STUB_MODE=true` または `ORCA_API_KEY` 未設定のときは HTTP通信を行わず固定応答を返す
+（デモ当日の障害対策。最後まで維持する）。
 """
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import io
+import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Literal, Protocol
 
+import httpx
+from PIL import Image
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
@@ -24,11 +34,35 @@ Purpose = Literal["task_review", "image_validation", "environment_check", "resul
 Tier = Literal["light", "vision"]
 
 STUB_MODEL_NAME = "stub"
+CHAT_COMPLETIONS_PATH = "/chat/completions"
+
+#: 判定のブレを抑えるため審査・検品ともに 0.2 で固定する（docs/04-ai-pipeline.md 1.1）
+TEMPERATURE = 0.2
+DEFAULT_MAX_TOKENS = 1500
+#: マスキング座標の問い合わせのみ 800（Phase 5 で使用）
+COORDINATE_MAX_TOKENS = 800
+
+#: 送信前に長辺をこのサイズへ縮小し、JPEG品質85で再エンコードする
+MAX_IMAGE_LONG_EDGE = 1568
+IMAGE_JPEG_QUALITY = 85
+
+#: 指数バックオフの待ち時間（秒）
+BACKOFF_SECONDS = (1.0, 2.0)
+
+_JSON_REPAIR_MESSAGE = (
+    "直前の出力はJSONとして解析できませんでした。"
+    "説明を含めず、JSONオブジェクトのみを出力してください。"
+)
 
 
 @dataclass
 class ImageInput:
-    """OrcaRouterへ渡す画像。Phase 3 で base64 データURIに変換して送る。"""
+    """OrcaRouterへ渡す画像。
+
+    Storageの署名URLは有効期限があり、アップストリームから到達できない可能性があるため、
+    実際の送信には `base64_data`（`encode_image_for_vlm()` の戻り値）を使う。
+    `url` は監査ログ用の参照として保持する。
+    """
 
     url: str | None = None
     base64_data: str | None = None
@@ -38,12 +72,18 @@ class ImageInput:
         """ログには base64 を残さない（docs/04-ai-pipeline.md 1.3）。"""
         return self.url or "<image omitted>"
 
+    def to_data_uri(self) -> str:
+        if not self.base64_data:
+            raise AIServiceError("画像データが空のためAIへ送信できません。")
+        return f"data:{self.media_type};base64,{self.base64_data}"
+
 
 @dataclass
 class OrcaResult:
     parsed: BaseModel
+    #: 生レスポンス（OpenAI互換のエンベロープ全体）
     raw: dict[str, Any]
-    #: 実際に使われたモデル名（スタブ時は "stub"）
+    #: 実際に使われたアップストリームのモデル名（スタブ時は "stub"）
     model: str
     latency_ms: int
     is_stub: bool
@@ -67,13 +107,56 @@ class InvocationRecorder(Protocol):
     ) -> None: ...
 
 
+def encode_image_for_vlm(data: bytes) -> str:
+    """長辺 1568px へ縮小し、JPEG品質85で再エンコードした base64 を返す。
+
+    bbox は正規化座標（0〜1）で扱うため、縮小しても座標の解釈は変わらない。
+    """
+    with Image.open(io.BytesIO(data)) as image:
+        rgb = image.convert("RGB")
+        longest = max(rgb.size)
+        if longest > MAX_IMAGE_LONG_EDGE:
+            scale = MAX_IMAGE_LONG_EDGE / longest
+            rgb = rgb.resize(
+                (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale))),
+                Image.LANCZOS,
+            )
+        buffer = io.BytesIO()
+        rgb.save(buffer, format="JPEG", quality=IMAGE_JPEG_QUALITY)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
 class OrcaClient:
-    def __init__(self) -> None:
+    def __init__(self, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._settings = get_settings()
+        self._transport = transport
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def is_stub(self) -> bool:
         return self._settings.orca_stub_enabled
+
+    def router_name(self, tier: Tier) -> str:
+        """`model` に渡すルーター名。モデル名をコードへ直書きしない（1.1節）。"""
+        return (
+            self._settings.orca_router_vision
+            if tier == "vision"
+            else self._settings.orca_router_light
+        )
+
+    def _http(self) -> httpx.AsyncClient:
+        """httpx.AsyncClient はアプリのライフサイクルで使い回す（1.3節）。"""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self._settings.orca_api_base_url.rstrip("/"),
+                headers={
+                    "Authorization": f"Bearer {self._settings.orca_api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=self._settings.orca_timeout_seconds,
+                transport=self._transport,
+            )
+        return self._client
 
     async def complete_json(
         self,
@@ -84,6 +167,7 @@ class OrcaClient:
         response_schema: type[BaseModel],
         images: list[ImageInput] | None = None,
         tier: Tier = "light",
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         related_type: str | None = None,
         related_id: uuid.UUID | None = None,
         recorder: InvocationRecorder | None = None,
@@ -95,29 +179,32 @@ class OrcaClient:
         実呼び出しでは送信せず、監査ログにのみ含める。
         """
         started = time.perf_counter()
-        request_payload = self._build_log_payload(
+        request_log = self._build_log_payload(
             purpose=purpose,
             tier=tier,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             images=images,
             context=context,
+            max_tokens=max_tokens,
         )
 
         try:
             if self.is_stub:
-                raw = _stub_response(purpose, context or {})
+                raw = _stub_envelope(purpose, context or {})
                 model = STUB_MODEL_NAME
-                is_stub = True
+                parsed = self._parse_and_validate(raw, response_schema)
             else:
-                # TODO(phase-3): docs/04-ai-pipeline.md 1.1 の OpenAI互換API を httpx で呼ぶ。
-                # リトライ（429/5xx/タイムアウト/JSONパース失敗）とJSON強制の4段階もここで実装する。
-                raise AIServiceError(
-                    "OrcaRouter への実呼び出しは Phase 3 で実装します。"
-                    "現在は ORCA_STUB_MODE=true または ORCA_API_KEY 未設定でのみ動作します。"
+                raw, parsed = await self._call_api(
+                    purpose=purpose,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    response_schema=response_schema,
+                    images=images,
+                    tier=tier,
+                    max_tokens=max_tokens,
                 )
-
-            parsed = response_schema.model_validate(raw)
+                model = str(raw.get("model") or self.router_name(tier))
         except AIServiceError as exc:
             self._record(
                 recorder,
@@ -125,28 +212,13 @@ class OrcaClient:
                 related_type=related_type,
                 related_id=related_id,
                 model=None,
-                request_payload=request_payload,
-                response_payload=None,
+                request_payload=request_log,
+                response_payload=exc.details.get("response"),
                 latency_ms=_elapsed_ms(started),
                 is_stub=self.is_stub,
                 error=exc.message,
             )
             raise
-        except ValidationError as exc:
-            message = f"AIの応答がスキーマに一致しませんでした: {exc.error_count()} 件"
-            self._record(
-                recorder,
-                purpose=purpose,
-                related_type=related_type,
-                related_id=related_id,
-                model=None,
-                request_payload=request_payload,
-                response_payload=None,
-                latency_ms=_elapsed_ms(started),
-                is_stub=self.is_stub,
-                error=message,
-            )
-            raise AIServiceError(message) from exc
 
         latency_ms = _elapsed_ms(started)
         self._record(
@@ -155,24 +227,173 @@ class OrcaClient:
             related_type=related_type,
             related_id=related_id,
             model=model,
-            request_payload=request_payload,
+            request_payload=request_log,
             response_payload=raw,
             latency_ms=latency_ms,
-            is_stub=is_stub,
+            is_stub=self.is_stub,
             error=None,
         )
         return OrcaResult(
-            parsed=parsed, raw=raw, model=model, latency_ms=latency_ms, is_stub=is_stub
+            parsed=parsed, raw=raw, model=model, latency_ms=latency_ms, is_stub=self.is_stub
         )
 
-    def router_name(self, tier: Tier) -> str:
-        """`model` に渡すルーター名。モデル名をコードへ直書きしない（1.1節）。"""
-        return (
-            self._settings.orca_router_vision
-            if tier == "vision"
-            else self._settings.orca_router_light
+    # ------------------------------------------------------------------
+    # 実呼び出し
+    # ------------------------------------------------------------------
+    async def _call_api(
+        self,
+        *,
+        purpose: Purpose,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: type[BaseModel],
+        images: list[ImageInput] | None,
+        tier: Tier,
+        max_tokens: int,
+    ) -> tuple[dict[str, Any], BaseModel]:
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": _user_content(user_prompt, images)},
+        ]
+        attempts = self._settings.orca_max_retries + 1
+        last_error = "AIの呼び出しに失敗しました。"
+
+        for attempt in range(attempts):
+            body = {
+                "model": self.router_name(tier),
+                "messages": messages,
+                "temperature": TEMPERATURE,
+                "max_tokens": max_tokens,
+            }
+            try:
+                response = await self._http().post(CHAT_COMPLETIONS_PATH, json=body)
+            except httpx.TimeoutException as exc:
+                last_error = f"AIの呼び出しがタイムアウトしました: {exc}"
+                if not await self._sleep_before_retry(attempt, attempts, reason="timeout"):
+                    raise AIServiceError(last_error) from exc
+                continue
+            except httpx.HTTPError as exc:
+                last_error = f"AIサービスへの通信に失敗しました: {exc}"
+                if not await self._sleep_before_retry(attempt, attempts, reason="http_error"):
+                    raise AIServiceError(last_error) from exc
+                continue
+
+            if self._is_retryable_status(
+                response, purpose=purpose, has_images=bool(images), tier=tier
+            ):
+                last_error = f"AIの呼び出しに失敗しました（HTTP {response.status_code}）。"
+                if not await self._sleep_before_retry(
+                    attempt,
+                    attempts,
+                    reason=f"http_{response.status_code}",
+                    retry_after=_retry_after_seconds(response),
+                ):
+                    raise AIServiceError(last_error, details={"status": response.status_code})
+                continue
+
+            raw = response.json()
+            try:
+                parsed = self._parse_and_validate(raw, response_schema)
+            except AIServiceError as exc:
+                last_error = exc.message
+                logger.warning(
+                    "AI応答のJSON解析に失敗しました",
+                    extra={"purpose": purpose, "attempt": attempt + 1, "reason": exc.message},
+                )
+                if attempt + 1 >= attempts:
+                    raise AIServiceError(last_error, details={"response": raw}) from exc
+                # 直前の出力を見せて、JSONのみを出すよう指示して再試行する（1.1節の4段階目）
+                messages = [
+                    *messages,
+                    {"role": "assistant", "content": _content_of(raw) or ""},
+                    {"role": "user", "content": _JSON_REPAIR_MESSAGE},
+                ]
+                continue
+
+            return raw, parsed
+
+        raise AIServiceError(last_error)
+
+    def _is_retryable_status(
+        self, response: httpx.Response, *, purpose: Purpose, has_images: bool, tier: Tier
+    ) -> bool:
+        """リトライすべきステータスなら True。リトライ不可なら例外を送出する（1.1節の表）。"""
+        status = response.status_code
+        if status < 300:
+            return False
+
+        if status in (401, 403):
+            logger.error(
+                "OrcaRouter の認証に失敗しました。ORCA_API_KEY の設定を確認してください",
+                extra={"status": status, "purpose": purpose},
+            )
+            raise AIServiceError(
+                "AIサービスの認証に失敗しました。APIキーの設定を確認してください。",
+                details={"status": status},
+            )
+
+        if status == 400:
+            # 画像付きで 400 のときは Vision 非対応モデルへ振られた可能性がある。
+            # リトライでは解決しないため、環境変数の見直しを促して止める（1.1節）。
+            if has_images:
+                logger.error(
+                    "画像付きリクエストが 400 で拒否されました。"
+                    "Vision対応モデルのみを許可したルーターを ORCA_ROUTER_VISION に設定してください",
+                    extra={"router": self.router_name(tier), "purpose": purpose},
+                )
+                raise AIServiceError(
+                    "画像を扱えるモデルへルーティングされませんでした。"
+                    "ORCA_ROUTER_VISION に Vision対応のルーターを設定してください。",
+                    details={"status": status, "body": response.text[:500]},
+                )
+            logger.error(
+                "OrcaRouter がリクエストを拒否しました",
+                extra={"status": status, "purpose": purpose, "body": response.text[:500]},
+            )
+            raise AIServiceError("AIへのリクエストが拒否されました。", details={"status": status})
+
+        if status == 429 or status >= 500:
+            return True
+
+        raise AIServiceError(
+            f"AIの呼び出しに失敗しました（HTTP {status}）。", details={"status": status}
         )
 
+    async def _sleep_before_retry(
+        self, attempt: int, attempts: int, *, reason: str, retry_after: float | None = None
+    ) -> bool:
+        if attempt + 1 >= attempts:
+            return False
+        delay = (
+            retry_after
+            if retry_after is not None
+            else BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)]
+        )
+        logger.warning(
+            "AI呼び出しをリトライします",
+            extra={"reason": reason, "attempt": attempt + 1, "delay_seconds": delay},
+        )
+        await asyncio.sleep(delay)
+        return True
+
+    def _parse_and_validate(
+        self, raw: dict[str, Any], response_schema: type[BaseModel]
+    ) -> BaseModel:
+        content = _content_of(raw)
+        if content is None:
+            raise AIServiceError("AIの応答が空でした。")
+        try:
+            payload = extract_json_object(content)
+        except ValueError as exc:
+            raise AIServiceError(f"AIの応答をJSONとして解析できませんでした: {exc}") from exc
+        try:
+            return response_schema.model_validate(payload)
+        except ValidationError as exc:
+            raise AIServiceError(
+                f"AIの応答がスキーマに一致しませんでした（{exc.error_count()}件）。"
+            ) from exc
+
+    # ------------------------------------------------------------------
     def _build_log_payload(
         self,
         *,
@@ -182,11 +403,14 @@ class OrcaClient:
         user_prompt: str,
         images: list[ImageInput] | None,
         context: dict[str, Any] | None,
+        max_tokens: int,
     ) -> dict[str, Any]:
         return {
             "purpose": purpose,
             "tier": tier,
             "model": self.router_name(tier),
+            "temperature": TEMPERATURE,
+            "maxTokens": max_tokens,
             "systemPrompt": system_prompt,
             "userPrompt": user_prompt,
             "images": [image.to_log_payload() for image in images or []],
@@ -202,14 +426,113 @@ class OrcaClient:
             logger.exception("ai_invocations への記録に失敗しました")
 
     async def close(self) -> None:
-        """Phase 3 で httpx.AsyncClient を保持したら、ここで解放する。"""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+
+# ----------------------------------------------------------------------
+# ヘルパー
+# ----------------------------------------------------------------------
+def _user_content(user_prompt: str, images: list[ImageInput] | None) -> Any:
+    """画像がなければ文字列、あれば OpenAI Vision 形式の配列を返す。"""
+    if not images:
+        return user_prompt
+    content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
+    for image in images:
+        content.append({"type": "image_url", "image_url": {"url": image.to_data_uri()}})
+    return content
+
+
+def _content_of(raw: dict[str, Any]) -> str | None:
+    choices = raw.get("choices") or []
+    if not choices:
+        return None
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+    return content if isinstance(content, str) else None
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    value = response.headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return None
+
+
+def extract_json_object(text: str) -> dict[str, Any]:
+    """コードフェンスや前置きの文章が付いていても JSON を取り出す（1.1節の2〜3段階目）。"""
+    cleaned = text.strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", cleaned, re.DOTALL)
+    if fence:
+        cleaned = fence.group(1).strip()
+
+    try:
+        loaded = json.loads(cleaned)
+    except json.JSONDecodeError:
+        loaded = None
+    if isinstance(loaded, dict):
+        return loaded
+
+    start = cleaned.find("{")
+    if start == -1:
+        raise ValueError("JSONオブジェクトが見つかりません")
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(cleaned)):
+        char = cleaned[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = json.loads(cleaned[start : index + 1])
+                if not isinstance(candidate, dict):
+                    raise ValueError("JSONオブジェクトではありません")
+                return candidate
+    raise ValueError("JSONオブジェクトが閉じていません")
 
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 
-def _stub_response(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
+def _stub_envelope(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
+    """スタブ応答を実呼び出しと同じエンベロープに包み、解析経路を共通化する。"""
+    content = _stub_content(purpose, context)
+    return {
+        "id": "stub",
+        "model": STUB_MODEL_NAME,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps(content, ensure_ascii=False),
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
+def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
     """固定応答（docs/04-ai-pipeline.md 1.4）。
 
     `image_validation` を提出回数の奇偶で交互に失敗させるのは、
