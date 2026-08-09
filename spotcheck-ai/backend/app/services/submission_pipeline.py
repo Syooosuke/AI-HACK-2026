@@ -83,19 +83,26 @@ async def _validate(
     if assignment is None or task is None or worker is None:
         return
 
-    # 2. 決定論的な位置・時刻チェック（機能C の一部）
+    # 2. 決定論的な位置・時刻チェック（機能C の C-1〜C-4, C-6）
     location = location_check.run_deterministic_checks(task, submission)
-    submission.location_check = location
 
-    # 3. VLM検品（機能B。Phase 1 はスタブ応答）
+    # 3. VLM検品（機能B）。失敗時は例外が伝播し、呼び出し元が error として記録する
     result = await image_validation.validate_image(
         session,
         task=task,
         submission=submission,
         orca=orca,  # type: ignore[arg-type]
+        storage=storage,
     )
 
-    # 5. TODO(phase-4): reality_score の算出
+    # 4. C-5 環境整合（VLM の daylight_state を使う）
+    location = location_check.apply_environment_check(location, submission, result.daylight_state)
+    submission.location_check = location
+
+    # 5. reality_score の算出（docs/04-ai-pipeline.md 4.2）
+    submission.reality_score = location_check.compute_reality_score(
+        location, worker_trust_score=worker.trust_score
+    )
 
     # 6. 合否判定（docs/04-ai-pipeline.md 3.4）
     issues = [{"code": item.code, "message": item.message} for item in result.issues]
@@ -154,6 +161,8 @@ async def _validate(
             "submission_id": str(submission.id),
             "attempt_no": submission.attempt_no,
             "score": result.score,
+            "reality_score": submission.reality_score,
+            "flags": ",".join(location["flags"]) or "-",
             "result": "approved" if approved else "rejected",
         },
     )

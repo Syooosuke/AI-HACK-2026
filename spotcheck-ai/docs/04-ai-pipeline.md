@@ -338,7 +338,27 @@ class IssueItem(BaseModel):
 【summary】クライアントが結果画面で読むための要約を、日本語60文字以内で記述してください。
 
 判定は提出画像のみに基づいて行い、推測で「写っているはず」と判断しないでください。
+
+【出力フォーマット】次のキーだけを持つJSONオブジェクトを出力してください。
+{
+  "score": 0〜100の整数,
+  "subject_present": true | false,
+  "framing_ok": true | false,
+  "sharpness_ok": true | false,
+  "brightness_ok": true | false,
+  "reference_match": true | false | null,
+  "observed_scene": 文字列,
+  "daylight_state": "daylight" | "twilight" | "night" | "indoor" | "unknown",
+  "weather_hint": "clear" | "cloudy" | "rain" | "snow" | "unknown",
+  "issues": [{"code": コード, "message": 文字列}],
+  "summary": 文字列
+}
 ```
+
+> 【出力フォーマット】と、issues で使えるコードを視覚的な判定のみに限定する指示は
+> 3.1 の `ImageValidationResult` を満たすために実装時に追記した。
+> `LOCATION_MISMATCH` / `TIMESTAMP_MISMATCH` は 3.4 のとおりサービス層が付与するため、
+> VLMには出させない。
 
 ### 3.3 ユーザープロンプト
 

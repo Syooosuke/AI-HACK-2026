@@ -35,6 +35,7 @@ from app.schemas.submission import (
     TaskResultsResponse,
 )
 from app.schemas.user import TRUST_SCORE_TO_STARS_DIVISOR, WorkerSummary
+from app.services.exif import extract_exif
 from app.services.uploads import extension_for, read_and_validate_image
 
 logger = get_logger(__name__)
@@ -104,7 +105,8 @@ async def create_submission(
         captured_accuracy_m=data.captured_accuracy_m,
         captured_at=captured_at,
         device_info=_parse_device_info(data.device_info_raw),
-        # TODO(phase-4): Pillow でEXIFを抽出して exif_data に格納する
+        # EXIFは補助的な検証材料。抽出に失敗しても提出は通す（D-02）
+        exif_data=extract_exif(payload),
         ai_validation_status=ValidationStatus.PENDING,
     )
     submission_repo.create(session, submission)

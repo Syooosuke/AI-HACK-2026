@@ -167,12 +167,25 @@ def make_assignment(session: Session, *, task: Task, worker: User) -> TaskAssign
     return assignment
 
 
-def store_raw_image(key: str) -> None:
-    """ローカルストレージに検品用のダミー画像を置く。"""
+def tiny_jpeg(
+    size: tuple[int, int] = (64, 48), color: tuple[int, int, int] = (120, 140, 160)
+) -> bytes:
+    """検品テスト用の小さな実JPEG（Pillow で開ける必要がある）。"""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, color).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def store_raw_image(key: str, bucket: str | None = None) -> None:
+    """ローカルストレージに検品用の画像を置く。"""
     settings = get_settings()
-    path = _STORAGE_DIR / settings.storage_bucket_raw / key
+    path = _STORAGE_DIR / (bucket or settings.storage_bucket_raw) / key
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"\xff\xd8\xff\xd9")  # 最小のJPEGマーカー
+    path.write_bytes(tiny_jpeg())
 
 
 __all__ = [
