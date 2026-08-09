@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,10 +17,14 @@ from app.core.config import collect_config_warnings, get_settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger, setup_logging
 from app.core.storage import get_storage
+from app.jobs import expire_tasks
 from app.services.orca_client import get_orca_client
 
 setup_logging()
 logger = get_logger(__name__)
+
+#: 期限超過タスクのクローズ間隔（docs/03-api.md 4.1）
+EXPIRE_JOB_INTERVAL_MINUTES = 5
 
 
 @asynccontextmanager
@@ -43,10 +48,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("環境変数の設定は充足しています")
 
-    # TODO(phase-6): APScheduler で expire_tasks を登録する（docs/03-api.md 4.2）
+    # 期限超過タスクのクローズ（docs/03-api.md 4節）。
+    # 起動直後に1回実行し、停止中に期限切れになったタスクを回収する。
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(
+        expire_tasks.run_once,
+        trigger="interval",
+        minutes=EXPIRE_JOB_INTERVAL_MINUTES,
+        id="expire_tasks",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.start()
+    expire_tasks.run_once()
+    logger.info(
+        "期限切れタスクのジョブを登録しました",
+        extra={"interval_minutes": EXPIRE_JOB_INTERVAL_MINUTES},
+    )
+
     try:
         yield
     finally:
+        scheduler.shutdown(wait=False)
         await get_orca_client().close()
         await get_storage().close()
         logger.info("SpotCheck AI バックエンドを停止しました")

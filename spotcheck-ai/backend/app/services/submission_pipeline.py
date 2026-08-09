@@ -10,7 +10,6 @@
   4. 機能C の C-5（環境整合）を B の出力で判定
   5. reality_score を算出
   6. 合否判定 → 合格なら機能D（マスキング）→ 納品・報酬確定、不合格なら再撮影ループ
-TODO(phase-6): payments への charge / payout 記録
 """
 
 from __future__ import annotations
@@ -36,7 +35,13 @@ from app.models import (
 from app.models.user import TRUST_SCORE_ON_APPROVED, TRUST_SCORE_ON_FAILED
 from app.repositories import assignment_repo, submission_repo, task_repo
 from app.schemas.ai import ImageValidationResult
-from app.services import image_validation, location_check, masking, task_service
+from app.services import (
+    image_validation,
+    location_check,
+    masking,
+    payment_stub,
+    task_service,
+)
 from app.services.orca_client import get_orca_client
 
 logger = get_logger(__name__)
@@ -211,7 +216,8 @@ async def _handle_approved(
     worker.apply_trust_score_delta(TRUST_SCORE_ON_APPROVED)
     worker.completed_task_count += 1
 
-    # 6-6. TODO(phase-6): payments に charge / payout を作成する（payment_stub.py）
+    # 6-6. 決済スタブ（D-03）。charge / payout を記録するだけで実決済は行わない
+    payment_stub.record_settlement(session, task=task, submission=submission)
 
     # 6-7. 合格提出の要約を結合して依頼全体の結果要約にする。
     # 先に flush して、今回の提出が approved としてクエリに含まれる状態にする。

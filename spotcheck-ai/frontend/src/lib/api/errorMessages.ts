@@ -9,6 +9,8 @@ const MESSAGES: Record<string, string> = {
   NETWORK_ERROR: "サーバーに接続できません。通信環境を確認してください。",
   UNAUTHENTICATED: "デモユーザーが選択されていません。トップから選び直してください。",
   FORBIDDEN: "この操作を行う権限がありません。ユーザーを切り替えてください。",
+  NOT_FOUND: "対象が見つかりません。一覧から選び直してください。",
+  HTTP_ERROR: "通信に失敗しました。もう一度お試しください。",
   TASK_NOT_FOUND: "依頼が見つかりません。一覧から選び直してください。",
   SUBMISSION_NOT_FOUND: "提出が見つかりません。",
   ASSIGNMENT_NOT_FOUND: "受注情報が見つかりません。",

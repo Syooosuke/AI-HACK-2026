@@ -16,11 +16,13 @@ import { ValidationBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { getSubmission } from "@/lib/api/submissions";
+import { getTask } from "@/lib/api/tasks";
 import type { SubmissionStatus } from "@/types/api";
 
 const POLL_INTERVAL_MS = 2000;
-// TODO(phase-6): 打ち切り時間の仕様（60秒）に合わせて調整する
-const MAX_POLL_ATTEMPTS = 60;
+//: 60秒で打ち切る（docs/06-phases.md Phase 6）
+const MAX_POLL_MS = 60_000;
+const MAX_POLL_ATTEMPTS = MAX_POLL_MS / POLL_INTERVAL_MS;
 
 export default function SubmissionStatusPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -28,8 +30,16 @@ export default function SubmissionStatusPage() {
   const router = useRouter();
   const toast = useToast();
   const [data, setData] = useState<SubmissionStatus | null>(null);
+  const [reward, setReward] = useState<number | null>(null);
   const [stopped, setStopped] = useState(false);
   const attemptsRef = useRef(0);
+
+  // 報酬確定の表示に依頼の報酬額を使う（docs/05-frontend.md 画面⑦）
+  useEffect(() => {
+    getTask(taskId)
+      .then((task) => setReward(task.rewardAmount))
+      .catch(() => setReward(null));
+  }, [taskId]);
 
   const load = useCallback(async () => {
     if (!submissionId) return true;
@@ -108,10 +118,8 @@ export default function SubmissionStatusPage() {
         />
       </Card>
 
-      {processing && <PollingIndicator label="2秒ごとに検品状況を確認しています" />}
-      {!processing && stopped && data.aiValidationStatus === "processing" && (
-        <PollingIndicator stopped />
-      )}
+      {processing && !stopped && <PollingIndicator label="2秒ごとに検品状況を確認しています" />}
+      {processing && stopped && <PollingIndicator stopped />}
 
       {approved && (
         <Card className="space-y-3 border-emerald-200 bg-emerald-50">
@@ -120,6 +128,9 @@ export default function SubmissionStatusPage() {
           </p>
           <p className="text-xs text-emerald-700">
             報酬が確定しました。お疲れさまでした。
+            {reward != null && (
+              <span className="ml-1 font-bold">（¥{reward.toLocaleString()}）</span>
+            )}
           </p>
           {data.processedImageUrl && (
             // eslint-disable-next-line @next/next/no-img-element

@@ -215,7 +215,7 @@ export default function NewTaskPage() {
         </Button>
         {submitting && (
           <p className="text-center text-xs text-slate-500">
-            審査には最大30秒ほどかかります。画面を閉じずにお待ちください。
+            審査には30秒〜1分ほどかかります。画面を閉じずにお待ちください。
           </p>
         )}
       </div>
