@@ -127,9 +127,11 @@ def test_retake_loop_first_reject_then_approve(session: Session, users: dict[str
     # 合格でワーカーの信頼度が加点される（docs/02-database.md 2.1）
     assert float(users["worker"].trust_score) == 94.0
     assert users["worker"].completed_task_count == 1
-    # マスキング未実装のためスキップ扱いだが、配信用の画像URLは設定される
+    # マスキングを通した画像が配信用バケットへ置かれる
     assert second.processed_image_url is not None
-    assert second.masking_result["skipped"] is True
+    assert second.masking_result["skipped"] is False
+    # スタブモードでは座標問い合わせが空を返すため、加工領域は無い
+    assert second.masking_result["regions"] == []
 
 
 def test_retake_limit_fails_assignment_and_reopens_slot(

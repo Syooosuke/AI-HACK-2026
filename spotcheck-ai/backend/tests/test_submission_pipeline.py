@@ -255,6 +255,37 @@ def test_environment_mismatch_reduces_reality_score(
     assert submission.reality_score <= 80
 
 
+def test_client_api_never_exposes_the_raw_bucket(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """クライアント向けAPIのレスポンスに原本（STORAGE_BUCKET_RAW）が一切現れない。
+
+    キー自体は加工後画像と同じパスを使うため、**バケット名**で機械的に検証する。
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    submission = submit_and_validate(session, users, monkeypatch, vlm=vlm_output())
+    assert submission.ai_validation_status is ValidationStatus.APPROVED
+    settings = get_settings()
+
+    client_headers = {"X-Demo-User-Id": str(users["client"].id)}
+    worker_headers = {"X-Demo-User-Id": str(users["worker"].id)}
+    with TestClient(app) as api:
+        bodies = [
+            api.get(f"/api/tasks/{submission.task_id}/results", headers=client_headers).text,
+            api.get(f"/api/tasks/{submission.task_id}", headers=client_headers).text,
+            api.get(f"/api/submissions/{submission.id}", headers=client_headers).text,
+            api.get(f"/api/submissions/{submission.id}", headers=worker_headers).text,
+        ]
+
+    for body in bodies:
+        assert settings.storage_bucket_raw not in body
+    # 配信用バケットの署名URLは含まれる（結果画面で表示するため）
+    assert settings.storage_bucket_processed in bodies[0]
+
+
 def test_ai_failure_marks_error_without_consuming_retake(
     session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
 ) -> None:

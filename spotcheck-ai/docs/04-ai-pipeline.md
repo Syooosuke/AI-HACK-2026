@@ -52,7 +52,13 @@ curl https://api.orcarouter.ai/v1/chat/completions \
 ```
 
 - `temperature` は審査・検品ともに **0.2** とする（判定のブレを抑えるため）。
-- `max_tokens` は 1500。マスキング座標の問い合わせのみ 800。
+- `max_tokens` は **4000**。マスキング座標の問い合わせのみ 800。
+
+> **実装時に 1500 → 4000 へ変更した。** `orcarouter/auto` は推論モデル（例: qwen3 系）へ
+> ルーティングすることがあり、reasoning tokens が `max_tokens` を食い潰して
+> `finish_reason="length"` かつ **本文が空** になる事象を実際に確認したため。
+> あわせて、`finish_reason="length"` を検出したら上限を倍にして再試行する
+> （上限 8000）実装を入れている。
 
 **画像を含むリクエスト（OpenAI Vision形式）**
 

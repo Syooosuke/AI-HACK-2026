@@ -50,6 +50,21 @@ class ImageValidationResult(BaseModel):
     summary: str = ""
 
 
+class PrivacyRegion(BaseModel):
+    """VLM が返すプライバシー領域（docs/04-ai-pipeline.md 5.2）。座標は 0.0〜1.0 の正規化座標。"""
+
+    kind: Literal["license_plate", "nameplate", "address_sign", "personal_document"]
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    confidence: float = 1.0
+
+
+class PrivacyRegionList(BaseModel):
+    regions: list[PrivacyRegion] = Field(default_factory=list)
+
+
 class ResultSummaryResult(BaseModel):
     """機能: クライアント向けの結果要約。"""
 

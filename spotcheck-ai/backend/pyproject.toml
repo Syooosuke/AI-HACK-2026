@@ -15,6 +15,8 @@ dependencies = [
     "pillow>=11.0",
     "python-multipart>=0.0.12",
     "apscheduler>=3.10",
+    # 顔・車両のローカル検出（D-09）。重みは models_weights/ に配置する（.gitignore対象）
+    "ultralytics>=8.3",
 ]
 
 [project.optional-dependencies]

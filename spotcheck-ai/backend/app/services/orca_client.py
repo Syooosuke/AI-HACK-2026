@@ -38,9 +38,13 @@ CHAT_COMPLETIONS_PATH = "/chat/completions"
 
 #: 判定のブレを抑えるため審査・検品ともに 0.2 で固定する（docs/04-ai-pipeline.md 1.1）
 TEMPERATURE = 0.2
-DEFAULT_MAX_TOKENS = 1500
+#: 推論モデルへルーティングされると reasoning tokens が上限を食い潰し、本文が空になるため
+#: 仕様の 1500 から引き上げている（docs/04-ai-pipeline.md 1.1 の注記）
+DEFAULT_MAX_TOKENS = 4000
 #: マスキング座標の問い合わせのみ 800（Phase 5 で使用）
 COORDINATE_MAX_TOKENS = 800
+#: finish_reason="length" のときに上限を倍にして再試行する。その上限値
+MAX_TOKENS_CEILING = 8000
 
 #: 送信前に長辺をこのサイズへ縮小し、JPEG品質85で再エンコードする
 MAX_IMAGE_LONG_EDGE = 1568
@@ -257,13 +261,14 @@ class OrcaClient:
         ]
         attempts = self._settings.orca_max_retries + 1
         last_error = "AIの呼び出しに失敗しました。"
+        budget = max_tokens
 
         for attempt in range(attempts):
             body = {
                 "model": self.router_name(tier),
                 "messages": messages,
                 "temperature": TEMPERATURE,
-                "max_tokens": max_tokens,
+                "max_tokens": budget,
             }
             try:
                 response = await self._http().post(CHAT_COMPLETIONS_PATH, json=body)
@@ -295,13 +300,30 @@ class OrcaClient:
             try:
                 parsed = self._parse_and_validate(raw, response_schema)
             except AIServiceError as exc:
-                last_error = exc.message
+                truncated = _finish_reason_of(raw) == "length"
+                last_error = (
+                    "AIの応答が max_tokens に達して本文が返りませんでした。"
+                    if truncated
+                    else exc.message
+                )
                 logger.warning(
                     "AI応答のJSON解析に失敗しました",
-                    extra={"purpose": purpose, "attempt": attempt + 1, "reason": exc.message},
+                    extra={
+                        "purpose": purpose,
+                        "attempt": attempt + 1,
+                        "truncated": truncated,
+                        "max_tokens": budget,
+                        "reason": exc.message,
+                    },
                 )
                 if attempt + 1 >= attempts:
                     raise AIServiceError(last_error, details={"response": raw}) from exc
+
+                if truncated:
+                    # 推論トークンで上限を使い切っている。形式の指摘ではなく予算を増やす
+                    budget = min(MAX_TOKENS_CEILING, budget * 2)
+                    continue
+
                 # 直前の出力を見せて、JSONのみを出すよう指示して再試行する（1.1節の4段階目）
                 messages = [
                     *messages,
@@ -453,6 +475,11 @@ def _content_of(raw: dict[str, Any]) -> str | None:
     return content if isinstance(content, str) else None
 
 
+def _finish_reason_of(raw: dict[str, Any]) -> str | None:
+    choices = raw.get("choices") or []
+    return choices[0].get("finish_reason") if choices else None
+
+
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     value = response.headers.get("Retry-After")
     if not value:
@@ -552,6 +579,10 @@ def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
         }
 
     if purpose == "image_validation":
+        # マスキングの座標問い合わせは同じ purpose を使うため、stage で分岐する
+        if context.get("stage") == "masking":
+            return {"regions": []}
+
         attempt_no = int(context.get("attempt_no", 1))
         if attempt_no % 2 == 1:
             return {

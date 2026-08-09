@@ -3,12 +3,13 @@
 `POST /api/submissions` の BackgroundTasks から呼ばれる。
 **すべてのDB更新は単一トランザクションで行い、失敗時はロールバックする。**
 
-Phase 1 の範囲:
-  - 機能C の C-1 / C-2（決定論的な位置・時刻チェック）
-  - 機能B（VLM検品。OrcaClient のスタブ応答）
-  - 合否判定・再撮影ループ・枠の再開放・trust_score の更新
-TODO(phase-4): C-3〜C-6、reality_score、EXIF抽出
-TODO(phase-5): マスキング（現在は原本を配信用バケットへコピーし skipped=true を記録）
+処理順（docs/04-ai-pipeline.md 6節）:
+  1. processing へ更新
+  2. 機能C の C-1〜C-4, C-6（決定論的な位置・時刻チェック）
+  3. 機能B（VLM検品）— 失敗時は error で終了
+  4. 機能C の C-5（環境整合）を B の出力で判定
+  5. reality_score を算出
+  6. 合否判定 → 合格なら機能D（マスキング）→ 納品・報酬確定、不合格なら再撮影ループ
 TODO(phase-6): payments への charge / payout 記録
 """
 
@@ -35,16 +36,10 @@ from app.models import (
 from app.models.user import TRUST_SCORE_ON_APPROVED, TRUST_SCORE_ON_FAILED
 from app.repositories import assignment_repo, submission_repo, task_repo
 from app.schemas.ai import ImageValidationResult
-from app.services import image_validation, location_check, task_service
+from app.services import image_validation, location_check, masking, task_service
 from app.services.orca_client import get_orca_client
 
 logger = get_logger(__name__)
-
-CONTENT_TYPE_BY_EXTENSION = {
-    "jpg": "image/jpeg",
-    "png": "image/png",
-    "webp": "image/webp",
-}
 
 
 async def run_validation(submission_id: uuid.UUID) -> None:
@@ -180,30 +175,31 @@ async def _handle_approved(
 ) -> None:
     settings = get_settings()
 
-    # 6-1. TODO(phase-5): ここで機能D（マスキング）を実行する。
-    # 現状はマスキング未実装のため、原本を配信用バケットへコピーし skipped を記録する
-    # （docs/04-ai-pipeline.md 5.1 の「重みが無い場合はスキップして続行する」と同じ扱い）。
-    extension = submission.raw_image_url.rsplit(".", 1)[-1]
-    processed_key = f"{task.id}/{assignment.id}/{submission.attempt_no}.{extension}"
+    # 6-1. 機能D（マスキング）。加工後の画像のみを配信用バケットへ置く。
+    # **原本は STORAGE_BUCKET_RAW に残すが、APIレスポンスには一切含めない。**
     payload = await storage.download(
         bucket=settings.storage_bucket_raw, key=submission.raw_image_url
     )
+    outcome = await masking.apply_masking(
+        payload, orca=get_orca_client(), submission_id=submission.id
+    )
+    processed_key = f"{task.id}/{assignment.id}/{submission.attempt_no}.jpg"
     await storage.upload(
         bucket=settings.storage_bucket_processed,
         key=processed_key,
-        data=payload,
-        content_type=CONTENT_TYPE_BY_EXTENSION.get(extension, "image/jpeg"),
+        data=outcome.image,
+        content_type="image/jpeg",
     )
     submission.processed_image_url = processed_key
-    submission.masking_result = {
-        "skipped": True,
-        "reason": "マスキングは Phase 5 で実装する（現在は原本をそのまま配信用バケットへコピー）",
-        "regions": [],
-    }
-    logger.warning(
-        "マスキング未実装のため加工せずに配信用バケットへコピーしました",
-        extra={"submission_id": str(submission.id)},
-    )
+    submission.masking_result = outcome.result
+    if outcome.skipped:
+        logger.warning(
+            "マスキングをスキップしたため加工されていない画像を配信します",
+            extra={
+                "submission_id": str(submission.id),
+                "reason": outcome.result.get("reason") or "-",
+            },
+        )
 
     # 6-2〜6-5
     submission.ai_validation_status = ValidationStatus.APPROVED

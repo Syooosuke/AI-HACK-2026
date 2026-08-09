@@ -116,7 +116,7 @@ async def test_successful_call_parses_and_reports_upstream_model() -> None:
     body = json.loads(requests[0].content)
     assert body["model"] == get_settings().orca_router_light
     assert body["temperature"] == 0.2
-    assert body["max_tokens"] == 1500
+    assert body["max_tokens"] == orca_module.DEFAULT_MAX_TOKENS
     assert body["messages"][0]["role"] == "system"
     assert "response_format" not in body  # まずは付けずに送る（1.1節）
     assert requests[0].url.path.endswith("/chat/completions")
@@ -326,6 +326,48 @@ def test_extract_json_object_handles_nested_and_braces_in_strings() -> None:
 def test_extract_json_object_rejects_non_object() -> None:
     with pytest.raises(ValueError):
         extract_json_object("ただの文章です")
+
+
+async def test_truncated_response_retries_with_larger_budget() -> None:
+    """finish_reason=length（推論トークンで本文が空）なら max_tokens を倍にして再試行する。"""
+
+    def handler(_request: httpx.Request, attempt: int) -> httpx.Response:
+        if attempt == 1:
+            payload = envelope("")
+            payload["choices"][0]["finish_reason"] = "length"
+            return httpx.Response(200, json=payload)
+        return httpx.Response(200, json=envelope(VALID_CONTENT))
+
+    client, requests = build_client(handler)
+    result = await call(client)
+
+    assert result.parsed.score == 85  # type: ignore[union-attr]
+    assert len(requests) == 2
+    first = json.loads(requests[0].content)["max_tokens"]
+    second = json.loads(requests[1].content)["max_tokens"]
+    assert second == first * 2
+    # 予算不足が原因なので、修復用の追加メッセージは送らない
+    assert len(json.loads(requests[1].content)["messages"]) == 2
+
+
+async def test_truncated_response_error_message_mentions_max_tokens() -> None:
+    def handler(_request: httpx.Request, _attempt: int) -> httpx.Response:
+        payload = envelope("")
+        payload["choices"][0]["finish_reason"] = "length"
+        return httpx.Response(200, json=payload)
+
+    client, requests = build_client(handler)
+    with pytest.raises(AIServiceError) as exc:
+        await call(client)
+    assert "max_tokens" in exc.value.message
+    assert len(requests) == 3
+    # 上限は MAX_TOKENS_CEILING で止まる
+    budgets = [json.loads(request.content)["max_tokens"] for request in requests]
+    assert budgets == [
+        orca_module.DEFAULT_MAX_TOKENS,
+        orca_module.DEFAULT_MAX_TOKENS * 2,
+        min(orca_module.MAX_TOKENS_CEILING, orca_module.DEFAULT_MAX_TOKENS * 4),
+    ]
 
 
 def test_module_exposes_coordinate_max_tokens() -> None:
