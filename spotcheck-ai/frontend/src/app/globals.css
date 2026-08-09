@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * docs/05-frontend.md 1節のレイアウト方針:
+ * モバイルファースト（基準幅 390px）。デスクトップでも中央寄せでスマホの見た目を保つ。
+ * 配色は仕様で固定しているため、OSのダークモードには追従させない。
+ */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: #f8fafc; /* slate-50 */
+  color: #1e293b; /* slate-800 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* iOS で input のズームが発生しないようにする（撮影画面での操作性のため） */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  /* 画面⑩「レポートを印刷」用 */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
+}
