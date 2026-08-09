@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 環境変数（.env.example のみコミットする）
+.env
+.env.*
+!.env.example
+
+# YOLO重み（docs/06-phases.md Phase 5）
+models_weights/*
+!models_weights/.gitkeep
+
+# ローカルストレージのフォールバック先
+.storage/

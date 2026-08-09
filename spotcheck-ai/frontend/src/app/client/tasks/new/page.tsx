@@ -1,0 +1,278 @@
+"use client";
+
+/** 画面① 依頼作成（docs/05-frontend.md 画面①）。 */
+
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import { LocationPicker, type PickedLocation } from "@/components/map/LocationPicker";
+import { Button, Card, SectionTitle } from "@/components/ui";
+import { useToast } from "@/components/ui/Toast";
+import { toMessage } from "@/lib/api/errorMessages";
+import { createTask } from "@/lib/api/tasks";
+import { isoToLocalInput, localInputToIso, minutesFromNow } from "@/lib/datetime";
+import { env } from "@/lib/env";
+import { saveReview } from "@/lib/reviewHandoff";
+
+const MAX_REFERENCE_IMAGES = 3;
+const DESCRIPTION_MIN = 10;
+const DESCRIPTION_MAX = 1000;
+const TITLE_MAX = 60;
+
+export default function NewTaskPage() {
+  const router = useRouter();
+  const toast = useToast();
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState<PickedLocation>({
+    lat: env.defaultMapCenter.lat,
+    lng: env.defaultMapCenter.lng,
+    address: null,
+  });
+  const [scheduledAt, setScheduledAt] = useState(() => isoToLocalInput(minutesFromNow(60)));
+  const [deadlineAt, setDeadlineAt] = useState(() => isoToLocalInput(minutesFromNow(60 * 6)));
+  const [workerCount, setWorkerCount] = useState(1);
+  const [reward, setReward] = useState(2000);
+  const [images, setImages] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const errors = useMemo(() => {
+    const found: Record<string, string> = {};
+    if (!title.trim()) found.title = "タイトルを入力してください。";
+    if (title.length > TITLE_MAX) found.title = `${TITLE_MAX}文字以内で入力してください。`;
+    if (description.trim().length < DESCRIPTION_MIN) {
+      found.description = `詳細メッセージは${DESCRIPTION_MIN}文字以上で入力してください。`;
+    }
+    if (description.length > DESCRIPTION_MAX) {
+      found.description = `${DESCRIPTION_MAX}文字以内で入力してください。`;
+    }
+    if (!scheduledAt) found.scheduledAt = "撮影希望日時を指定してください。";
+    if (!deadlineAt) found.deadlineAt = "提出期限を指定してください。";
+    if (scheduledAt && new Date(scheduledAt).getTime() <= Date.now()) {
+      found.scheduledAt = "現在時刻より後を指定してください。";
+    }
+    if (scheduledAt && deadlineAt && new Date(deadlineAt) < new Date(scheduledAt)) {
+      found.deadlineAt = "撮影希望日時以降を指定してください。";
+    }
+    if (reward < 100 || reward > 100000) found.reward = "報酬は100〜100,000円で指定してください。";
+    return found;
+  }, [title, description, scheduledAt, deadlineAt, reward]);
+
+  const canSubmit = Object.keys(errors).length === 0 && !submitting;
+
+  const onPickImages = (files: FileList | null) => {
+    if (!files) return;
+    const merged = [...images, ...Array.from(files)].slice(0, MAX_REFERENCE_IMAGES);
+    setImages(merged);
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const review = await createTask({
+        title: title.trim(),
+        description: description.trim(),
+        locationLat: location.lat,
+        locationLng: location.lng,
+        locationAddress: location.address,
+        scheduledAt: localInputToIso(scheduledAt),
+        deadlineAt: localInputToIso(deadlineAt),
+        rewardAmount: reward,
+        requiredWorkerCount: workerCount,
+        referenceImages: images,
+      });
+      saveReview(review);
+      router.push("/client/tasks/new/review");
+    } catch (cause) {
+      toast.error(toMessage(cause));
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <h1 className="text-lg font-bold text-slate-800">依頼を作成</h1>
+
+      <Card className="space-y-3">
+        <SectionTitle>1. 地図で地点を指定</SectionTitle>
+        <LocationPicker value={location} onChange={setLocation} />
+      </Card>
+
+      <Card className="space-y-3">
+        <SectionTitle>2. 日時を指定</SectionTitle>
+        <Field label="撮影希望日時" error={errors.scheduledAt}>
+          <input
+            type="datetime-local"
+            value={scheduledAt}
+            onChange={(e) => setScheduledAt(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+          />
+        </Field>
+        <Field label="提出期限" error={errors.deadlineAt}>
+          <input
+            type="datetime-local"
+            value={deadlineAt}
+            onChange={(e) => setDeadlineAt(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+          />
+        </Field>
+      </Card>
+
+      <Card className="space-y-4">
+        <div>
+          <SectionTitle>3. 撮影人数</SectionTitle>
+          <div className="flex items-center gap-4">
+            <Stepper value={workerCount} min={1} max={10} onChange={setWorkerCount} />
+            <p className="text-xs text-slate-500">同じ地点を最大10人まで依頼できます</p>
+          </div>
+        </div>
+        <Field label="4. 報酬（1人あたり・円）" error={errors.reward}>
+          <input
+            type="number"
+            min={100}
+            max={100000}
+            step={100}
+            value={reward}
+            onChange={(e) => setReward(Number(e.target.value))}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+          />
+        </Field>
+      </Card>
+
+      <Card className="space-y-2">
+        <SectionTitle>5. 依頼タイトル</SectionTitle>
+        <Field label="" error={errors.title}>
+          <input
+            type="text"
+            value={title}
+            maxLength={TITLE_MAX}
+            placeholder="駅前の再開発工事の進捗確認"
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+          />
+        </Field>
+
+        <SectionTitle>6. 詳細メッセージ</SectionTitle>
+        <Field label="" error={errors.description}>
+          <textarea
+            value={description}
+            rows={5}
+            maxLength={DESCRIPTION_MAX}
+            placeholder="周辺の工事状況や交通状況を確認してください。"
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+          />
+        </Field>
+        <p className="text-right text-xs text-slate-400">
+          {description.length} / {DESCRIPTION_MAX}
+        </p>
+      </Card>
+
+      <Card className="space-y-3">
+        <SectionTitle>7. 参考画像（任意・最大3枚）</SectionTitle>
+        <div className="flex flex-wrap gap-2">
+          {images.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200"
+            >
+              {/* next/image はローカルの File を扱えないため object URL を使う */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={URL.createObjectURL(file)}
+                alt={`参考画像${index + 1}`}
+                className="h-full w-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => setImages(images.filter((_, i) => i !== index))}
+                className="absolute right-0 top-0 bg-black/60 px-1.5 text-xs text-white"
+                aria-label="削除"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {images.length < MAX_REFERENCE_IMAGES && (
+            <label className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-slate-300 text-2xl text-slate-400">
+              ＋
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="hidden"
+                onChange={(e) => onPickImages(e.target.files)}
+              />
+            </label>
+          )}
+        </div>
+      </Card>
+
+      <div className="space-y-2">
+        <Button accent="client" onClick={() => void submit()} disabled={!canSubmit} loading={submitting}>
+          {submitting ? "AIが依頼内容を審査しています…" : "依頼内容を確認"}
+        </Button>
+        {submitting && (
+          <p className="text-center text-xs text-slate-500">
+            審査には30秒〜1分ほどかかります。画面を閉じずにお待ちください。
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      {label && <span className="mb-1 block text-xs font-bold text-slate-500">{label}</span>}
+      {children}
+      {error && <span className="mt-1 block text-xs text-fail">{error}</span>}
+    </label>
+  );
+}
+
+function Stepper({
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - 1))}
+        className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold text-slate-600 disabled:opacity-30"
+        disabled={value <= min}
+        aria-label="減らす"
+      >
+        −
+      </button>
+      <span className="w-10 text-center text-lg font-bold tabular-nums">{value}</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold text-slate-600 disabled:opacity-30"
+        disabled={value >= max}
+        aria-label="増やす"
+      >
+        ＋
+      </button>
+    </div>
+  );
+}

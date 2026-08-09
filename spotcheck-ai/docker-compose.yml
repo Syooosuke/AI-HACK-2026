@@ -1,0 +1,24 @@
+# ローカル開発用のPostgreSQL（任意 / docs/01-architecture.md 2節）。
+# Supabase を使う場合は不要。DATABASE_URL の既定値がこのコンテナを指している。
+#
+#   docker compose up -d db
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: spotcheck-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: spotcheck
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spotcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db_data:

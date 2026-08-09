@@ -1,0 +1,13 @@
+.DS_Store
+
+# 環境変数（*.example のみコミットする）
+.env
+.env.local
+.env.*
+!.env.example
+!.env.local.example
+
+# 依存
+node_modules/
+.venv/
+__pycache__/
