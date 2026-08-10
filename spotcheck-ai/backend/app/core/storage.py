@@ -178,8 +178,7 @@ class LocalStorageBackend(StorageBackend):
     async def create_signed_url(
         self, *, bucket: str, key: str, expires_in: int = DEFAULT_SIGNED_URL_TTL_SECONDS
     ) -> str:
-        # TODO(phase-2): ローカル配信用のエンドポイントを追加する。
-        # その際、STORAGE_BUCKET_RAW への参照は必ず拒否すること（原本を露出させない）。
+        # 配信エンドポイント側でも processed バケット以外は拒否する。
         return f"/api/files/{bucket}/{key}"
 
 

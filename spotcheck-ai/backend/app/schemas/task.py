@@ -43,6 +43,10 @@ class TaskSummary(CamelModel):
     id: uuid.UUID
     status: TaskStatus
     title: str
+    description: str
+    location_lat: float
+    location_lng: float
+    location_address: str | None = None
     review_score: int | None = None
     review_summary: str | None = None
     scheduled_at: datetime

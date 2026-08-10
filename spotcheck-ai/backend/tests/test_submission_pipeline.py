@@ -286,6 +286,30 @@ def test_client_api_never_exposes_the_raw_bucket(
     assert settings.storage_bucket_processed in bodies[0]
 
 
+def test_local_processed_image_is_served_but_raw_image_is_forbidden(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ローカル保存でも加工済み画像を表示でき、原本は同じAPIから取得できない。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    submission = submit_and_validate(session, users, monkeypatch, vlm=vlm_output())
+    settings = get_settings()
+    headers = {"X-Demo-User-Id": str(users["client"].id)}
+
+    with TestClient(app) as api:
+        result = api.get(f"/api/tasks/{submission.task_id}/results", headers=headers).json()
+        image_url = result["results"][0]["processedImageUrl"]
+        processed = api.get(image_url)
+        raw = api.get(f"/api/files/{settings.storage_bucket_raw}/{submission.raw_image_url}")
+
+    assert processed.status_code == 200
+    assert processed.headers["content-type"] == "image/jpeg"
+    assert processed.content.startswith(b"\xff\xd8")
+    assert raw.status_code == 403
+
+
 def test_ai_failure_marks_error_without_consuming_retake(
     session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
 ) -> None:
