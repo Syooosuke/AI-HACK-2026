@@ -11,6 +11,7 @@ import { Button, Card, EmptyState } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { resubmitTask } from "@/lib/api/tasks";
+import { formatCoords } from "@/lib/geo";
 import { clearReview, loadReview, saveReview } from "@/lib/reviewHandoff";
 import type { TaskReviewResponse } from "@/types/api";
 
@@ -24,7 +25,11 @@ export default function ReviewPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    setData(loadReview());
+    const review = loadReview();
+    setData(review);
+    if (review?.review.decision === "needs_info") {
+      setDescription(review.task.description);
+    }
   }, []);
 
   // approved のときは3秒後に画面③へ自動遷移する
@@ -62,7 +67,7 @@ export default function ReviewPage() {
       const next = await resubmitTask(task.id, { description: description.trim() });
       saveReview(next);
       setData(next);
-      setDescription("");
+      setDescription(next.review.decision === "needs_info" ? next.task.description : "");
       toast.success("再審査しました。");
     } catch (cause) {
       toast.error(toMessage(cause));
@@ -117,6 +122,10 @@ export default function ReviewPage() {
       {review.decision === "needs_info" && (
         <Card className="space-y-3 border-red-200 bg-red-50">
           <p className="text-sm font-bold text-red-800">スコア低 → 内容の補足をお願いします</p>
+          <div className="rounded-lg bg-white/80 px-3 py-2 text-xs text-slate-600">
+            <span className="font-bold">指定地点（保持されています）: </span>
+            {task.locationAddress ?? formatCoords(task.locationLat, task.locationLng)}
+          </div>
           <ul className="list-disc space-y-1 pl-5 text-xs text-red-700">
             {review.missingInfo.map((item) => (
               <li key={item}>{item}</li>
@@ -125,7 +134,7 @@ export default function ReviewPage() {
           <textarea
             rows={5}
             value={description}
-            placeholder="不足している情報を追記した詳細メッセージ全文を入力してください。"
+            placeholder="元の詳細メッセージに不足情報を追記してください。"
             onChange={(e) => setDescription(e.target.value)}
             className="w-full rounded-xl border border-red-200 bg-white px-3 py-2.5 text-sm"
           />

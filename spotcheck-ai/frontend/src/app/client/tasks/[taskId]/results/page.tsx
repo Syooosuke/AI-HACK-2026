@@ -14,6 +14,7 @@ import { Card, EmptyState, InfoRow, SectionTitle, Skeleton } from "@/components/
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
+import { resolveApiUrl } from "@/lib/api/client";
 import { getTaskResults } from "@/lib/api/tasks";
 import { formatDateTime } from "@/lib/datetime";
 import { formatCoords } from "@/lib/geo";
@@ -78,7 +79,7 @@ export default function ResultsPage() {
               {result.processedImageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={result.processedImageUrl}
+                  src={resolveApiUrl(result.processedImageUrl)}
                   alt="安全処理済みの撮影画像"
                   className="w-full rounded-xl bg-slate-100 object-cover"
                 />
@@ -87,8 +88,6 @@ export default function ResultsPage() {
                   画像を準備中です
                 </div>
               )}
-
-              <p className="text-sm leading-relaxed text-slate-700">{result.aiSummary}</p>
 
               <div className="border-t border-slate-100 pt-2">
                 <InfoRow label="撮影時刻" value={formatDateTime(result.capturedAt)} />

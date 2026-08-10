@@ -508,7 +508,7 @@ class PrivacyRegion(BaseModel):
    │         required_worker_count に到達したら tasks.status='completed'
    │    6-5. ワーカーの trust_score +2.0、completed_task_count += 1
    │    6-6. payments に charge / payout を作成し stub_succeeded にする（D-03）
-   │    6-7. tasks.result_summary を更新（合格提出のsummaryを結合して生成）
+   │    6-7. 安全処理済み画像を OrcaRouter へ送り tasks.result_summary を生成
    └─ rejected:
         6-1. submissions を rejected で更新
         6-2. assignment.retake_count < MAX_RETAKE_COUNT なら

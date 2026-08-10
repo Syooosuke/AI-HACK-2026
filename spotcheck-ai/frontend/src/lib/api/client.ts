@@ -35,6 +35,11 @@ export type ApiFetchOptions = Omit<RequestInit, "body"> & {
   demoUserId?: string | null;
 };
 
+/** APIが返す相対的な画像URLを、バックエンドを指す絶対URLへ変換する。 */
+export function resolveApiUrl(url: string): string {
+  return new URL(url, `${env.apiBaseUrl.replace(/\/$/, "")}/`).toString();
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { body, demoUserId, headers, ...rest } = options;
   const requestHeaders = new Headers(headers);

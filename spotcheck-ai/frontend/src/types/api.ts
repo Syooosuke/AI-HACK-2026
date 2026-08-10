@@ -76,6 +76,10 @@ export type TaskSummary = {
   id: string;
   status: TaskStatus;
   title: string;
+  description: string;
+  locationLat: number;
+  locationLng: number;
+  locationAddress: string | null;
   reviewScore: number | null;
   reviewSummary: string | null;
   scheduledAt: string;
