@@ -36,9 +36,15 @@ from app.schemas.submission import (
 )
 from app.schemas.user import TRUST_SCORE_TO_STARS_DIVISOR, WorkerSummary
 from app.services.exif import extract_exif
+from app.services.orca_client import get_orca_client
+from app.services.result_summary import generate_result_summary
 from app.services.uploads import extension_for, read_and_validate_image
 
 logger = get_logger(__name__)
+
+LEGACY_FIXED_SUMMARIES = {
+    "工事は予定通り進行中。安全対策は適切に実施されています。",
+}
 
 
 @dataclass
@@ -198,6 +204,27 @@ async def get_task_results(
         raise Forbidden("他のクライアントの依頼は参照できません。")
 
     rows = submission_repo.list_approved_by_task(session, task_id)
+    if task.result_summary in LEGACY_FIXED_SUMMARIES and rows:
+        latest_submission = rows[-1][0]
+        if latest_submission.processed_image_url:
+            processed_image = await storage.download(
+                bucket=get_settings().storage_bucket_processed,
+                key=latest_submission.processed_image_url,
+            )
+            observations = [
+                summary
+                for submission, _worker in rows
+                if (summary := (submission.ai_feedback or {}).get("summary"))
+            ]
+            task.result_summary = await generate_result_summary(
+                task=task,
+                submission=latest_submission,
+                processed_image=processed_image,
+                observations=list(dict.fromkeys(observations)),
+                orca=get_orca_client(),
+            )
+            session.flush()
+
     results: list[TaskResultItem] = []
     for submission, worker in rows:
         feedback = submission.ai_feedback or {}

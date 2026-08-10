@@ -89,8 +89,6 @@ export default function ResultsPage() {
                 </div>
               )}
 
-              <p className="text-sm leading-relaxed text-slate-700">{result.aiSummary}</p>
-
               <div className="border-t border-slate-100 pt-2">
                 <InfoRow label="撮影時刻" value={formatDateTime(result.capturedAt)} />
                 <InfoRow
