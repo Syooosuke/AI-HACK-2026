@@ -44,6 +44,19 @@ def test_placeholder_is_square(session: Session, users: dict[str, User]) -> None
         assert image.size == (256, 256)
 
 
+def test_placeholder_without_cjk_font_is_still_square(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """日本語フォントが無い環境でも豆腐を描かず、画像自体は成立する。"""
+    monkeypatch.setattr(thumbnail_service, "CJK_FONT_CANDIDATES", ())
+    task = make_task(session, client=users["client"])
+
+    placeholder = thumbnail_service.build_placeholder(task, size=256)
+
+    with Image.open(io.BytesIO(placeholder)) as image:
+        assert image.size == (256, 256)
+
+
 def test_placeholder_color_depends_on_task(session: Session, users: dict[str, User]) -> None:
     """依頼ごとに色が変わる（同じ依頼なら常に同じ色）。"""
     first = make_task(session, client=users["client"])

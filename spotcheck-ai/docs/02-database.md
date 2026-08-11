@@ -289,6 +289,39 @@ pending → processing → approved / rejected / error
 
 ---
 
+### 2.7 task_likes
+
+投稿（依頼）への「いいね」。1ユーザー×1依頼につき1行。取り消したら行を削除する。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| id | uuid | PK | |
+| user_id | uuid | FK→users.id ON DELETE CASCADE, NOT NULL | |
+| task_id | uuid | FK→tasks.id ON DELETE CASCADE, NOT NULL | |
+| created_at | timestamptz | NOT NULL DEFAULT now() | いいね欄の並び順に使う |
+
+- `UNIQUE (user_id, task_id)` … 二重いいねを防ぐ最後の守り
+- `INDEX (user_id, created_at DESC)` … いいね欄の一覧用
+- 件数は `tasks.like_count` に持たせる（一覧のN+1を避けるための非正規化）
+
+### 2.8 saved_searches
+
+いいね欄に並べる「保存した検索条件」。1ユーザー20件まで（アプリ側で制限）。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| id | uuid | PK | |
+| user_id | uuid | FK→users.id ON DELETE CASCADE, NOT NULL | |
+| label | text | NOT NULL | 表示名。未指定時は住所と範囲から自動生成 |
+| center_lat / center_lng | double precision | NOT NULL | 検索の中心 |
+| location_address | text | | 検索に使った住所（表示用） |
+| radius_km | double precision | NOT NULL DEFAULT 5 | |
+| sort | text | NOT NULL DEFAULT 'distance' | distance / reward / deadline |
+| last_match_count | int | | 一覧を開いた時点の該当件数 |
+| created_at | timestamptz | NOT NULL DEFAULT now() | |
+
+---
+
 ## 4. シードデータ
 
 `backend/scripts/seed_demo_users.py` で以下を作成する。

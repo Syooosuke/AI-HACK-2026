@@ -40,9 +40,9 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | 入力値不正。`details` にフィールド別エラー |
 | 401 | `UNAUTHENTICATED` `INVALID_CREDENTIALS` | 未ログイン・トークン不正・認証情報の誤り |
-| 403 | `FORBIDDEN` `CANNOT_ACCEPT_OWN_TASK` | 他人のリソース・自分の依頼の受注 |
+| 403 | `FORBIDDEN` `CANNOT_ACCEPT_OWN_TASK` `CANNOT_LIKE_OWN_TASK` | 他人のリソース・自分の依頼の受注／いいね |
 | 404 | `TASK_NOT_FOUND` `SUBMISSION_NOT_FOUND` | |
-| 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` `LOGIN_ID_TAKEN` | 状態競合 |
+| 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` `LOGIN_ID_TAKEN` `SAVED_SEARCH_LIMIT` | 状態競合・上限超過 |
 | 413 | `FILE_TOO_LARGE` | 画像サイズ超過 |
 | 502 | `AI_SERVICE_ERROR` | OrcaRouter呼び出し失敗 |
 
@@ -80,6 +80,12 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | POST | `/api/submissions` | 必須 | 画像＋メタデータ提出 |
 | GET | `/api/submissions/{submissionId}` | 必須 | 検品状況・結果のポーリング（本人とオーナーのみ） |
 | GET | `/api/tasks/{taskId}/results` | 必須 | 合格済み提出の一覧（画面⑨。オーナーのみ） |
+| POST | `/api/tasks/{taskId}/like` | 必須 | いいねを付ける（自分の依頼は不可） |
+| DELETE | `/api/tasks/{taskId}/like` | 必須 | いいねを取り消す |
+| GET | `/api/likes` | 必須 | いいねした投稿の一覧（いいね欄の上半分） |
+| GET | `/api/saved-searches` | 必須 | 保存した検索条件（いいね欄の下半分） |
+| POST | `/api/saved-searches` | 必須 | 検索条件を保存する |
+| DELETE | `/api/saved-searches/{searchId}` | 必須 | 検索条件を削除する |
 
 ---
 
@@ -243,14 +249,35 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
       "deadlineAt": "2026-05-28T14:00:00+09:00",
       "locationLat": 35.6595,
       "locationLng": 139.7005,
+      "locationAddress": "東京都渋谷区道玄坂1丁目",
       "remainingSlots": 1,
-      "requiredWorkerCount": 1
+      "requiredWorkerCount": 1,
+      "status": "open",
+      "createdAt": "2026-05-24T10:30:00+09:00",
+      "thumbnailUrl": "https://.../task-thumbnail/....jpg",
+      "thumbnailSource": "generated",
+      "badges": ["new"],
+      "likeCount": 3,
+      "isLiked": false,
+      "viewCount": 21,
+      "isMine": false
     }
   ]
 }
 ```
 
 `remainingSlots = required_worker_count − COUNT(status IN ('accepted','submitted','approved'))`
+
+**投稿カード用のフィールド**（`/api/likes` も同じ形で返す）
+
+| フィールド | 説明 |
+|---|---|
+| `thumbnailUrl` | 正方形サムネイルの配信URL。生成前は `null` |
+| `thumbnailSource` | `reference` / `generated` / `streetview` / `placeholder` |
+| `badges` | `sold`（取引終了）/ `new`（24時間以内）/ `hot`（閲覧20以上）の配列 |
+| `likeCount` `isLiked` | いいねの数と、自分が押しているか |
+| `viewCount` | 詳細を開かれた回数（オーナー自身の閲覧は数えない） |
+| `isMine` | 自分が出した依頼か。`true` のときハートは出さない |
 
 ---
 
@@ -437,3 +464,40 @@ client のみ。`ai_validation_status='approved'` の submission のみを返す
 ### 4.2 起動時の実行
 
 FastAPIの `lifespan` でスケジューラを起動・停止する。起動直後にも1回実行し、停止中に期限切れになったタスクを回収する。
+
+---
+
+### 3.10 いいね `/api/tasks/{taskId}/like` `/api/likes`
+
+投稿カード右上のハートに対応する。
+
+- `POST` / `DELETE` はどちらも**冪等**。二重タップでも件数はずれない。
+- 自分が出した依頼にはいいねできない → `403 CANNOT_LIKE_OWN_TASK`
+  （受注できない依頼をハート欄に溜めないため）。
+- `tasks.like_count` に集計値を持たせ、一覧で件数を引くためのN+1を避ける。
+
+**レスポンス `200`**（付けた場合・取り消した場合ともに同じ形）
+```json
+{ "taskId": "uuid", "liked": true, "likeCount": 3 }
+```
+
+`GET /api/likes` は**いいねした順（新しい順）**で投稿カードを返す。
+取引終了（`completed`）した依頼も一覧から消さず、`badges` に `sold` を付けて返す。
+
+---
+
+### 3.11 保存した検索条件 `/api/saved-searches`
+
+**`POST` リクエスト**
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `label` | string | | 一覧に出す名前。未指定なら「<住所> から5km」を自動生成 |
+| `centerLat` / `centerLng` | number | ✓ | 検索の中心 |
+| `locationAddress` | string | | 検索に使った住所（表示用） |
+| `radiusKm` | number | | 0.5〜50（既定5） |
+| `sort` | string | | `distance` / `reward` / `deadline` |
+
+- 1ユーザーあたり20件まで。超過は `409 SAVED_SEARCH_LIMIT`。
+- `lastMatchCount` には**一覧を開いた時点の該当件数**を入れて返す（保存後に増減するため）。
+- 他ユーザーの条件は取得も削除もできない（`403 FORBIDDEN`）。

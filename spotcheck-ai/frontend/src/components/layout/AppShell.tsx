@@ -3,7 +3,7 @@
 /**
  * 共通シェル。
  * - ログイン後は全員が同じ画面構成を使う（クライアント／ワーカーの区別なし）
- * - 下部タブ: ホーム / さがす / 依頼する（中央） / お知らせ / マイページ
+ * - 下部タブ: ホーム / いいね / 依頼する（中央） / お知らせ / マイページ
  * - 撮影画面は全画面カメラのため、シェルを外して children だけを描画する
  * - ログイン・新規登録画面ではヘッダーとタブを出さない
  */
@@ -26,7 +26,7 @@ type Tab = {
 
 const TABS: Tab[] = [
   { href: "/home", label: "ホーム", icon: "🏠" },
-  { href: "/search", label: "さがす", icon: "🔍" },
+  { href: "/likes", label: "いいね", icon: "❤️" },
   { href: "/requests/new", label: "依頼する", icon: "📸", primary: true },
   { href: "/notifications", label: "お知らせ", icon: "🔔" },
   { href: "/me", label: "マイページ", icon: "👤" },

@@ -1,6 +1,9 @@
 "use client";
 
-/** 画面⑤ 依頼詳細・受注（docs/05-frontend.md 画面⑤）。 */
+/**
+ * 画面⑤ 依頼詳細・受注（docs/05-frontend.md 画面⑤）。
+ * 投稿カードをタップするとここへ来る。依頼主が入力した内容を一通り表示する。
+ */
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -8,7 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, resolveApiUrl } from "@/lib/api/client";
+import { likeTask, unlikeTask } from "@/lib/api/social";
 import { toMessage } from "@/lib/api/errorMessages";
 import { acceptTask, getTask } from "@/lib/api/tasks";
 import { formatDateTime, formatRemaining } from "@/lib/datetime";
@@ -21,6 +25,7 @@ export default function WorkerTaskDetailPage() {
   const toast = useToast();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [accepting, setAccepting] = useState(false);
+  const [likePending, setLikePending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +57,19 @@ export default function WorkerTaskDetailPage() {
     }
   };
 
+  const toggleLike = async () => {
+    if (!task || likePending) return;
+    setLikePending(true);
+    try {
+      const result = task.isLiked ? await unlikeTask(task.id) : await likeTask(task.id);
+      setTask({ ...task, isLiked: result.liked, likeCount: result.likeCount });
+    } catch (cause) {
+      toast.error(toMessage(cause));
+    } finally {
+      setLikePending(false);
+    }
+  };
+
   if (!task) {
     return (
       <div className="space-y-3">
@@ -68,9 +86,55 @@ export default function WorkerTaskDetailPage() {
 
   return (
     <div className="space-y-5">
+      {task.thumbnailUrl && (
+        <div className="relative overflow-hidden rounded-2xl bg-slate-100">
+          {/* eslint-disable-next-line @next/next/no-img-element -- 署名付きURLのため最適化は使わない */}
+          <img
+            src={resolveApiUrl(task.thumbnailUrl)}
+            alt={task.title}
+            className="aspect-square w-full object-cover"
+          />
+          {task.badges.length > 0 && (
+            <div className="absolute left-3 top-3 flex gap-1">
+              {task.badges.map((badge) => (
+                <span
+                  key={badge}
+                  className={`rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide ${
+                    badge === "sold"
+                      ? "bg-slate-800 text-white"
+                      : badge === "new"
+                        ? "bg-worker text-white"
+                        : "bg-fail text-white"
+                  }`}
+                >
+                  {badge.toUpperCase()}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-bold leading-snug text-slate-800">{task.title}</h1>
-        {mine && <AssignmentBadge status={mine.status} />}
+        <div className="flex shrink-0 items-center gap-2">
+          {mine && <AssignmentBadge status={mine.status} />}
+          {!task.isMine && (
+            <button
+              type="button"
+              onClick={() => void toggleLike()}
+              disabled={likePending}
+              aria-label={task.isLiked ? "いいねを取り消す" : "いいねする"}
+              aria-pressed={task.isLiked}
+              className="flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 disabled:opacity-60"
+            >
+              <span aria-hidden className={task.isLiked ? "text-fail" : "text-slate-300"}>
+                {task.isLiked ? "♥" : "♡"}
+              </span>
+              {task.likeCount}
+            </button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -88,10 +152,22 @@ export default function WorkerTaskDetailPage() {
       {task.referenceImages.length > 0 && (
         <Card>
           <SectionTitle>参考画像</SectionTitle>
-          <p className="text-xs text-slate-500">
+          <p className="mb-2 text-xs text-slate-500">
             依頼者が期待するイメージ（{task.referenceImages.length}枚）
           </p>
-          {/* 参考画像の署名URL発行は Phase 4 以降で対応する。ここでは枚数のみ表示する */}
+          <ul className="grid grid-cols-3 gap-2">
+            {task.referenceImages.map((image) => (
+              <li key={image.id} className="overflow-hidden rounded-xl bg-slate-100">
+                {/* eslint-disable-next-line @next/next/no-img-element -- 署名付きURLのため最適化は使わない */}
+                <img
+                  src={resolveApiUrl(image.imageUrl)}
+                  alt="参考画像"
+                  className="aspect-square w-full object-cover"
+                  loading="lazy"
+                />
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
 
@@ -120,6 +196,18 @@ export default function WorkerTaskDetailPage() {
           icon={<span>💰</span>}
         />
         <InfoRow label="残り枠" value={`${task.remainingSlots}枠`} icon={<span>👥</span>} />
+        {task.owner && (
+          <InfoRow
+            label="依頼主"
+            value={`${task.owner.displayName}（信頼度 ${task.owner.trustScore.toFixed(1)}）`}
+            icon={<span>🧑‍💼</span>}
+          />
+        )}
+        <InfoRow
+          label="閲覧・いいね"
+          value={`${task.viewCount}回 / ${task.likeCount}件`}
+          icon={<span>👀</span>}
+        />
       </Card>
       <p className="text-center text-[10px] text-slate-400">
         所要時間は徒歩80m/分で概算した目安です

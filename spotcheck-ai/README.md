@@ -123,6 +123,8 @@ curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
 | `SUPABASE_URL` + `SUPABASE_SECRET_KEY`（backend） | Supabase Storage への画像保存 | ローカル保存（`LOCAL_STORAGE_DIR`） |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（frontend） | 地図表示・場所検索・住所の自動取得 | 緯度経度の手入力フォーム |
 | `JWT_SECRET`（backend） | 本番相当のトークン署名 | 開発用の固定鍵（誰でも偽造できる） |
+| `GOOGLE_MAPS_SERVER_API_KEY`（backend） | 写真なし依頼のサムネイルにストリートビューを使う | サーバーが描くプレースホルダ画像 |
+| `ORCA_ROUTER_IMAGE`（backend） | サムネイルのAI画像生成 | ストリートビュー画像かプレースホルダ |
 | `DATABASE_URL`（backend） | 別のDBを使う | docker-compose のローカルDB |
 
 ### AI（OrcaRouter）
@@ -156,7 +158,13 @@ cd backend && ./.venv/bin/python -m scripts.init_storage
 
 - **Maps JavaScript API**（地図本体）
 - **Geocoding API**（ピンを置いた時の住所自動取得と、地名・住所のテキスト検索）
-- **Places API**（任意。検索ボックスの候補表示。無効でも Geocoding によるテキスト検索で動きます）
+- **Places API (New)**（任意。検索ボックスの候補表示。無効でも Geocoding のテキスト検索で動きます）
+- **Street View Static API**（任意。写真なし依頼のサムネイル生成に使用。サーバー側キーへ設定）
+
+> **地名検索が動かない場合**は、この2点がほぼ原因です。
+> ① プロジェクトで**課金（Billing）が有効化されていない** ② **Geocoding API が未有効**。
+> Demo Key は Maps JavaScript API だけが使えるため、地図は出ても検索は `REQUEST_DENIED` になります。
+> 画面には Google が返した理由をそのまま日本語で表示します。
 
 取得したキーを `frontend/.env.local` の `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` に設定します。
 `next dev` が `.env.local` を自動リロードするので、ブラウザを Cmd+Shift+R で再読み込みしてください。

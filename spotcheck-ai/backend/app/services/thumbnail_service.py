@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
@@ -38,6 +39,15 @@ logger = get_logger(__name__)
 
 THUMBNAIL_PREFIX = "task-thumbnail"
 JPEG_QUALITY = 88
+
+#: 日本語を描けるフォントの候補。見つからない場合は英数字だけで描く。
+CJK_FONT_CANDIDATES = (
+    "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansJP-Regular.otf",
+)
 
 #: プレースホルダの背景色（依頼IDから決めて、依頼ごとに色が変わるようにする）
 PLACEHOLDER_COLORS = (
@@ -68,8 +78,22 @@ def to_square_jpeg(data: bytes, *, size: int) -> bytes:
     return buffer.getvalue()
 
 
+def _load_font(size: int) -> tuple[ImageFont.ImageFont | ImageFont.FreeTypeFont, bool]:
+    """日本語を描けるフォントを探す。戻り値は (フォント, 日本語が描けるか)。"""
+    for path in CJK_FONT_CANDIDATES:
+        if Path(path).exists():
+            try:
+                return ImageFont.truetype(path, size), True
+            except OSError:
+                continue
+    return ImageFont.load_default(), False
+
+
 def build_placeholder(task: Task, *, size: int) -> bytes:
-    """外部サービスに頼らないサムネイル。依頼のタイトルと場所を描く。"""
+    """外部サービスに頼らないサムネイル。依頼の場所と報酬を描く。
+
+    日本語フォントが見つからない環境では英数字のみで描く（豆腐を出さない）。
+    """
     start, end = PLACEHOLDER_COLORS[task.id.int % len(PLACEHOLDER_COLORS)]
     image = Image.new("RGB", (size, size), start)
     draw = ImageDraw.Draw(image)
@@ -82,21 +106,25 @@ def build_placeholder(task: Task, *, size: int) -> bytes:
             fill=tuple(round(s + (e - s) * ratio) for s, e in zip(start, end, strict=True)),
         )
 
-    font = ImageFont.load_default()
-    place = task.location_address or f"{task.location_lat:.4f}, {task.location_lng:.4f}"
-    # 既定フォントは日本語を描けないため、文字が出ない環境でも成立する構図にする
-    draw.text((size * 0.08, size * 0.72), place[:40], fill=(255, 255, 255), font=font)
-    draw.text(
-        (size * 0.08, size * 0.8),
-        f"reward {task.reward_amount} JPY",
-        fill=(255, 255, 255),
-        font=font,
-    )
+    # カメラを模した円（撮影依頼であることを示す）
+    center = size // 2
+    radius = size // 5
     draw.ellipse(
-        [size * 0.36, size * 0.24, size * 0.64, size * 0.52],
+        [center - radius, center - radius * 1.1, center + radius, center + radius * 0.9],
         outline=(255, 255, 255),
-        width=max(2, size // 120),
+        width=max(2, size // 100),
     )
+
+    reward_font, has_cjk = _load_font(max(18, size // 12))
+    small_font, _ = _load_font(max(12, size // 26))
+
+    margin = size * 0.07
+    reward = f"¥{task.reward_amount:,}" if has_cjk else f"{task.reward_amount} JPY"
+    draw.text((margin, size * 0.74), reward, fill=(255, 255, 255), font=reward_font)
+
+    place = task.location_address if has_cjk else None
+    label = place or f"{task.location_lat:.4f}, {task.location_lng:.4f}"
+    draw.text((margin, size * 0.86), label[:32], fill=(255, 255, 255), font=small_font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=JPEG_QUALITY)
