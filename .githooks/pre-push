@@ -1,0 +1,90 @@
+#!/bin/sh
+# push 前の検査（spotcheck-ai/CLAUDE.md 6節）
+#
+#   有効化: git config core.hooksPath .githooks
+#
+# 1. main への push を拒否する
+# 2. dev から切られていないブランチの push を拒否する
+# 3. linter と unit test を通す（破壊的な変更をそのまま共有しないため）
+#
+# 緊急時は SPOTCHECK_SKIP_CHECKS=1 で 3 のみ飛ばせる。1 と 2 は飛ばせない。
+
+set -e
+
+REMOTE_NAME="$1"
+PROJECT_DIR="$(git rev-parse --show-toplevel)/spotcheck-ai"
+RED='\033[0;31m'; YELLOW='\033[0;33m'; GREEN='\033[0;32m'; NC='\033[0m'
+
+die() {
+  printf "${RED}✗ push を中止しました${NC}\n  %s\n" "$1" >&2
+  shift
+  for line in "$@"; do printf "  %s\n" "$line" >&2; done
+  exit 1
+}
+
+# ---- 1. main への push を拒否 ------------------------------------------------
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  [ -z "$remote_ref" ] && continue
+  # 削除の push（local_sha が全部ゼロ）は対象外
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+
+  case "$remote_ref" in
+    refs/heads/main)
+      die "main への push は禁止です（CLAUDE.md 6.1）" \
+          "作業ブランチを dev から切り、dev へ PR を出してください:" \
+          "  git checkout dev && git pull --ff-only origin dev" \
+          "  git checkout -b fix/内容"
+      ;;
+  esac
+done
+
+# ---- 2. dev から切られているかを確認 ----------------------------------------
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$BRANCH" != "dev" ]; then
+  git fetch -q "$REMOTE_NAME" dev 2>/dev/null || true
+  if git rev-parse --verify -q "refs/remotes/$REMOTE_NAME/dev" >/dev/null; then
+    if ! git merge-base --is-ancestor "refs/remotes/$REMOTE_NAME/dev" HEAD; then
+      die "このブランチは最新の $REMOTE_NAME/dev を含んでいません（CLAUDE.md 6.1）" \
+          "dev から切り直すか、dev を取り込んでください:" \
+          "  git merge $REMOTE_NAME/dev"
+    fi
+  fi
+fi
+
+# ---- 3. linter と unit test ---------------------------------------------------
+if [ "$SPOTCHECK_SKIP_CHECKS" = "1" ]; then
+  printf "${YELLOW}⚠ SPOTCHECK_SKIP_CHECKS=1 のため lint / テストを飛ばしました${NC}\n"
+  printf "${YELLOW}  飛ばした事実を必ず報告してください（CLAUDE.md 6.4）${NC}\n"
+  exit 0
+fi
+
+VENV="$PROJECT_DIR/backend/.venv/bin"
+if [ ! -x "$VENV/ruff" ]; then
+  die "バックエンドの検査環境がありません" \
+      "  cd spotcheck-ai/backend && python3 -m venv .venv && ./.venv/bin/pip install -e \".[dev]\""
+fi
+
+printf "→ backend: ruff\n"
+(cd "$PROJECT_DIR/backend" && "$VENV/ruff" check . && "$VENV/ruff" format --check .) \
+  || die 'ruff が失敗しました' \
+         '  cd spotcheck-ai/backend && ./.venv/bin/ruff check --fix . && ./.venv/bin/ruff format .'
+
+printf "→ backend: pytest\n"
+if ! (cd "$PROJECT_DIR/backend" && "$VENV/pytest" -q); then
+  # DBが起動していない場合は原因を明示する
+  if ! (cd "$PROJECT_DIR" && docker compose ps db 2>/dev/null | grep -q "Up"); then
+    die "pytest が失敗しました。テスト用DBが起動していない可能性があります" \
+        "  cd spotcheck-ai && docker compose up -d db"
+  fi
+  die "pytest が失敗しました。テストを通してから push してください"
+fi
+
+if [ -d "$PROJECT_DIR/frontend/node_modules" ]; then
+  printf "→ frontend: tsc / eslint\n"
+  (cd "$PROJECT_DIR/frontend" && npx --no-install tsc --noEmit && npm run --silent lint) \
+    || die "フロントエンドの型チェックまたは lint が失敗しました"
+else
+  printf "${YELLOW}⚠ frontend/node_modules が無いためフロントの検査を飛ばしました${NC}\n"
+fi
+
+printf "${GREEN}✓ すべての検査を通過しました${NC}\n"

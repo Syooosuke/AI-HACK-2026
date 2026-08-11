@@ -101,7 +101,80 @@
 
 ---
 
-## 6. 作業の進め方
+## 6. Git / PR の運用ルール（違反したら作業を止める）
+
+**このセクションのルールは例外を認めない。** 判断に迷ったら人間に確認する。
+
+### 6.1 ブランチとPRの向き先
+
+| 項目 | ルール |
+|---|---|
+| 分岐元 | **必ず `dev` から切る**（`main` や他の作業ブランチから切らない） |
+| PRの向き先 | **`dev` のみ**。`base` が `dev` 以外のPRは**作らない／作られていたら棄却する** |
+| `main` への直push | **禁止** |
+| `main` へのPR | **禁止**（`dev` → `main` の同期も勝手に行わない） |
+| ブランチ名 | `feat/` `fix/` `docs/` `chore/` などの接頭辞＋内容（例: `fix/files-missing-image-404`） |
+
+```bash
+# 正しい始め方
+git checkout dev && git pull --ff-only origin dev
+git checkout -b fix/対象-内容
+
+# PR は base を明示して dev へ
+gh pr create --base dev --head <branch>
+```
+
+`main` を `dev` に揃える必要が出た場合は、**実行前に人間へ確認する**。
+
+### 6.2 push / PR の前に必ず通すもの
+
+**壊れた状態を共有しないため、以下がすべて通ってから push / PR する。**
+1件でも失敗したら push せず、原因を直す。
+
+```bash
+cd backend  && ./.venv/bin/ruff check . && ./.venv/bin/ruff format --check . && ./.venv/bin/pytest -q
+cd frontend && npx tsc --noEmit && npm run lint
+```
+
+- `pytest` は `spotcheck_test` DB を自動作成するため **`docker compose up -d db` が必要**
+- テストを飛ばしたい場合でも、**飛ばした事実を必ず報告する**（黙って飛ばさない）
+- 既存テストを「通らないから」といって削除・スキップしてはならない。
+  仕様変更で期待値が変わった場合のみ、変更理由をコミットメッセージに書いて更新する
+
+これらは `.githooks/pre-push` でも機械的に検査している（6.4参照）。
+
+### 6.3 マージ後の後片付け
+
+PRがマージされたら、**リモートとローカルの状態を一致させる**。
+
+```bash
+gh pr merge <番号> --merge --delete-branch      # リモートのブランチも削除する
+git checkout dev && git pull --ff-only origin dev
+git branch -d <branch>                          # ローカルも削除
+git fetch --prune origin                        # 消えたリモート追跡を掃除
+```
+
+マージ済みのブランチを残さない。`git branch -a` に merged 済みのものが残っていたら掃除する。
+
+### 6.4 機械的な強制
+
+| 仕組み | 何を防ぐか |
+|---|---|
+| `.githooks/pre-push` | `main` への push、`dev` 由来でないブランチの push、lint / テスト未通過での push |
+| GitHub の ruleset（`main`） | 直push・force push・ブランチ削除。PRを介さない変更 |
+
+フックは各自の環境で一度だけ有効化する（クローン直後に実行）。
+
+```bash
+git config core.hooksPath .githooks
+```
+
+緊急時に限り `SPOTCHECK_SKIP_CHECKS=1 git push` で検査を飛ばせるが、
+**使ったら必ず理由を報告する。**
+
+---
+
+## 7. 作業の進め方
 
 1. `docs/06-phases.md` のフェーズ順に実装する。フェーズを飛ばさない。
 2. 各フェーズの完了条件をすべて満たしてから次へ進む。
