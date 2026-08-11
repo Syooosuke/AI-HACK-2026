@@ -55,17 +55,7 @@ export default function TopPage() {
     <div className="space-y-6 pt-6">
       <header className="text-center">
         <h1 className="text-2xl font-bold text-slate-800">SpotCheck AI</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          遠隔地の現況確認を、AI検品つきで依頼できるプラットフォーム
-        </p>
       </header>
-
-      <Card className="bg-violet-50/60">
-        <p className="text-xs leading-relaxed text-violet-900">
-          デモ用の簡易ログインです。使うユーザーを選ぶと、以降のリクエストにそのユーザーとして
-          アクセスします。ヘッダー右上からいつでも切り替えられます。
-        </p>
-      </Card>
 
       {error && (
         <Card className="border-red-200 bg-red-50">

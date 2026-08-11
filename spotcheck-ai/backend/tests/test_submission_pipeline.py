@@ -15,9 +15,9 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import AssignmentStatus, Submission, User, ValidationStatus
+from app.models import AssignmentStatus, Submission, Task, User, ValidationStatus
 from app.repositories import submission_repo
-from app.services import submission_pipeline
+from app.services import submission_pipeline, submission_service
 from app.services.orca_client import OrcaClient
 from tests.conftest import make_assignment, make_task, store_raw_image
 
@@ -48,19 +48,32 @@ def install_vlm(monkeypatch: pytest.MonkeyPatch, content: str) -> None:
     monkeypatch.setattr(settings, "orca_stub_mode", False)
     monkeypatch.setattr(settings, "orca_api_key", "test-key")
 
-    def handler(_request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_body = json.loads(request.content)
+        system_prompt = request_body["messages"][0]["content"]
+        response_content = (
+            json.dumps(
+                {"summary": "提出画像では、日中の街路と建設中の建物が確認できます。"},
+                ensure_ascii=False,
+            )
+            if "現地調査結果をクライアント向けに要約" in system_prompt
+            else content
+        )
         return httpx.Response(
             200,
             json={
                 "id": "chatcmpl-test",
                 "model": "vision-model",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": content}}],
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": response_content}}
+                ],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
             },
         )
 
     client = OrcaClient(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(submission_pipeline, "get_orca_client", lambda: client)
+    monkeypatch.setattr(submission_service, "get_orca_client", lambda: client)
 
 
 def submit_and_validate(
@@ -118,6 +131,35 @@ def test_matching_image_is_approved(
     assert submission.reality_score == 100
     assert submission.location_check["within_tolerance"] is True
     assert submission.processed_image_url is not None
+    task = session.get(Task, submission.task_id)
+    assert task is not None
+    assert task.result_summary == "提出画像では、日中の街路と建設中の建物が確認できます。"
+
+
+def test_legacy_fixed_summary_is_regenerated_when_results_are_opened(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """既存データの固定総括も、結果画面の取得時にOrcaRouterで置き換える。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    submission = submit_and_validate(session, users, monkeypatch, vlm=vlm_output())
+    task = session.get(Task, submission.task_id)
+    assert task is not None
+    task.result_summary = "工事は予定通り進行中。安全対策は適切に実施されています。"
+    session.commit()
+
+    with TestClient(app) as api:
+        response = api.get(
+            f"/api/tasks/{task.id}/results",
+            headers={"X-Demo-User-Id": str(users["client"].id)},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["resultSummary"] == (
+        "提出画像では、日中の街路と建設中の建物が確認できます。"
+    )
 
 
 def test_unrelated_image_fails_with_subject_missing(
@@ -284,6 +326,30 @@ def test_client_api_never_exposes_the_raw_bucket(
         assert settings.storage_bucket_raw not in body
     # 配信用バケットの署名URLは含まれる（結果画面で表示するため）
     assert settings.storage_bucket_processed in bodies[0]
+
+
+def test_local_processed_image_is_served_but_raw_image_is_forbidden(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ローカル保存でも加工済み画像を表示でき、原本は同じAPIから取得できない。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    submission = submit_and_validate(session, users, monkeypatch, vlm=vlm_output())
+    settings = get_settings()
+    headers = {"X-Demo-User-Id": str(users["client"].id)}
+
+    with TestClient(app) as api:
+        result = api.get(f"/api/tasks/{submission.task_id}/results", headers=headers).json()
+        image_url = result["results"][0]["processedImageUrl"]
+        processed = api.get(image_url)
+        raw = api.get(f"/api/files/{settings.storage_bucket_raw}/{submission.raw_image_url}")
+
+    assert processed.status_code == 200
+    assert processed.headers["content-type"] == "image/jpeg"
+    assert processed.content.startswith(b"\xff\xd8")
+    assert raw.status_code == 403
 
 
 def test_ai_failure_marks_error_without_consuming_retake(

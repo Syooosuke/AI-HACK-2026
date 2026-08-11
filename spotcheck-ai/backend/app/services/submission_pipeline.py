@@ -40,9 +40,10 @@ from app.services import (
     location_check,
     masking,
     payment_stub,
+    result_summary,
     task_service,
 )
-from app.services.orca_client import get_orca_client
+from app.services.orca_client import OrcaClient, get_orca_client
 
 logger = get_logger(__name__)
 
@@ -71,7 +72,7 @@ async def run_validation(submission_id: uuid.UUID) -> None:
 
 
 async def _validate(
-    session: Session, *, submission_id: uuid.UUID, storage: StorageBackend, orca: object
+    session: Session, *, submission_id: uuid.UUID, storage: StorageBackend, orca: OrcaClient
 ) -> None:
     settings = get_settings()
     submission = submission_repo.get(session, submission_id)
@@ -91,7 +92,7 @@ async def _validate(
         session,
         task=task,
         submission=submission,
-        orca=orca,  # type: ignore[arg-type]
+        orca=orca,
         storage=storage,
     )
 
@@ -149,6 +150,7 @@ async def _validate(
             worker=worker,
             result=result,
             storage=storage,
+            orca=orca,
         )
     else:
         _handle_rejected(
@@ -177,6 +179,7 @@ async def _handle_approved(
     worker: User,
     result: ImageValidationResult,
     storage: StorageBackend,
+    orca: OrcaClient,
 ) -> None:
     settings = get_settings()
 
@@ -185,9 +188,7 @@ async def _handle_approved(
     payload = await storage.download(
         bucket=settings.storage_bucket_raw, key=submission.raw_image_url
     )
-    outcome = await masking.apply_masking(
-        payload, orca=get_orca_client(), submission_id=submission.id
-    )
+    outcome = await masking.apply_masking(payload, orca=orca, submission_id=submission.id)
     processed_key = f"{task.id}/{assignment.id}/{submission.attempt_no}.jpg"
     await storage.upload(
         bucket=settings.storage_bucket_processed,
@@ -219,10 +220,17 @@ async def _handle_approved(
     # 6-6. 決済スタブ（D-03）。charge / payout を記録するだけで実決済は行わない
     payment_stub.record_settlement(session, task=task, submission=submission)
 
-    # 6-7. 合格提出の要約を結合して依頼全体の結果要約にする。
+    # 6-7. 合格画像をOrcaRouterへ渡し、依頼全体の調査結果を生成する。
     # 先に flush して、今回の提出が approved としてクエリに含まれる状態にする。
     session.flush()
-    task.result_summary = _combine_result_summary(session, task)
+    observations = _approved_observations(session, task)
+    task.result_summary = await result_summary.generate_result_summary(
+        task=task,
+        submission=submission,
+        processed_image=outcome.image,
+        observations=observations,
+        orca=orca,
+    )
     session.flush()
 
 
@@ -275,11 +283,11 @@ def _mark_error(submission_id: uuid.UUID) -> None:
         session.commit()
 
 
-def _combine_result_summary(session: Session, task: Task) -> str:
-    """合格済み提出の要約を結合する（docs/04-ai-pipeline.md 6節 6-7）。"""
+def _approved_observations(session: Session, task: Task) -> list[str]:
+    """総括生成の補助情報として、合格済み提出の個別所見を集める。"""
     summaries: list[str] = []
     for submission, _worker in submission_repo.list_approved_by_task(session, task.id):
         summary = (submission.ai_feedback or {}).get("summary")
         if summary:
             summaries.append(summary)
-    return " / ".join(dict.fromkeys(summaries))
+    return list(dict.fromkeys(summaries))

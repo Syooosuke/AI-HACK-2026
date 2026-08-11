@@ -26,15 +26,37 @@
 
 ---
 
-## セットアップ
+## APIキーの扱い（最初に読んでください）
+
+**APIキーはリポジトリで共有しません。各自が自分のキーを用意するか、キー無しで動かします。**
+
+- `backend/.env` と `frontend/.env.local` は **`.gitignore` 済み**。コミットされません
+- リポジトリに入っているのは**値が空の雛形**（`.env.example` / `.env.local.example`）だけです
+- **キーが1つも無くても、全画面が動きます。** AIは固定応答（スタブ）、画像はローカル保存、
+  地図は緯度経度の手入力にフォールバックします。まずはこの状態で立ち上げてください
+
+| ファイル | Git | 中身 | 用意する人 |
+|---|---|---|---|
+| `backend/.env.example` | ✅ コミット | 雛形（値は空） | — |
+| `backend/.env` | ❌ 無視 | 実際の値 | 各自 |
+| `frontend/.env.local.example` | ✅ コミット | 雛形（値は空） | — |
+| `frontend/.env.local` | ❌ 無視 | 実際の値 | 各自 |
+
+> `git add -f` を使わない限り `.env` が誤ってコミットされることはありません。
+> 念のため `git status --porcelain` の出力に `.env` が現れないことを確認してから push してください。
+
+---
+
+## セットアップ（キー無しで動かす / 所要5分）
 
 ### 1. データベース
 
 ```bash
+cd spotcheck-ai
 docker compose up -d db          # localhost:5432 に PostgreSQL が起動する
 ```
 
-Supabase の PostgreSQL を使う場合はこの手順は不要。`DATABASE_URL` を差し替える。
+Mac を再起動したら再度実行してください（自動起動しません）。
 
 ### 2. バックエンド
 
@@ -42,50 +64,129 @@ Supabase の PostgreSQL を使う場合はこの手順は不要。`DATABASE_URL`
 cd backend
 python3 -m venv .venv
 ./.venv/bin/pip install -e ".[dev]"
-cp .env.example .env             # 値を埋める（未設定でも起動はする）
+cp .env.example .env             # そのままでOK。値は埋めなくても起動する
 ./.venv/bin/alembic upgrade head
 ./.venv/bin/python -m scripts.seed_demo_users
 ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-`GET http://localhost:8000/api/health` が 200 を返せば起動できている。
-不足している環境変数は起動ログに警告として出る。
+`GET http://localhost:8000/api/health` が 200 を返せば起動できています。
+不足している環境変数は起動ログに警告として出ます（**警告が出ていても動きます**）。
 
 ### 3. フロントエンド
+
+別のターミナルで:
 
 ```bash
 cd frontend
 npm install
-cp .env.local.example .env.local # NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+cp .env.local.example .env.local # そのままでOK
 npm run dev                      # http://localhost:3000
 ```
 
-### 4. 環境変数
+### 4. 起動確認
 
-| 変数 | 未設定時の挙動 |
-|---|---|
-| `DATABASE_URL` | 既定のローカル接続（docker-compose の PostgreSQL）を使う |
-| `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | 画像をローカルディレクトリへ保存する（`LOCAL_STORAGE_DIR`） |
-| `ORCA_API_KEY` | AIをスタブモードで動かす（固定応答。デモは通る） |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | 地図の代わりに緯度経度の手入力フォームを出す |
+```bash
+docker ps --filter name=spotcheck-db --format '{{.Names}} {{.Status}}'
+curl -s -o /dev/null -w "backend  %{http_code}\n" http://localhost:8000/api/health
+curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
+```
 
-Supabase を使う場合は、初回のみバケットを作成する。
+`healthy` / `200` / `200` なら完了です。`http://localhost:3000` を開いてデモシナリオへ進めます。
+
+---
+
+## 追加設定（各自のキーを入れて機能を有効化する）
+
+どれも**任意**です。入れなくてもデモは通ります。
+
+| 入れる変数 | 有効になるもの | 未設定時の挙動 |
+|---|---|---|
+| `ORCA_API_KEY`（backend） | 実際のAI審査・画像検品 | 固定応答のスタブ（デモは通る） |
+| `SUPABASE_URL` + `SUPABASE_SECRET_KEY`（backend） | Supabase Storage への画像保存 | ローカル保存（`LOCAL_STORAGE_DIR`） |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（frontend） | 地図表示・住所の自動取得 | 緯度経度の手入力フォーム |
+| `DATABASE_URL`（backend） | 別のDBを使う | docker-compose のローカルDB |
+
+### AI（OrcaRouter）
+
+`backend/.env` の `ORCA_API_KEY` に自分のキーを設定し、`ORCA_STUB_MODE=false` にします。
+`.py` を1つ触るか uvicorn を再起動すると反映されます（**`.env` の変更は自動反映されません**）。
+
+> 実測レイテンシは依頼審査 20〜90秒、画像検品 30秒〜15分です。画面⑦のポーリングは
+> 仕様どおり60秒で打ち切るため、**デモを通す場合は `ORCA_STUB_MODE=true` を推奨**します。
+
+### Supabase Storage
+
+`SUPABASE_URL` と `SUPABASE_SECRET_KEY`（Dashboard → Settings → API Keys の `sb_secret_...`）を
+設定し、初回のみバケットを作成します。
 
 ```bash
 cd backend && ./.venv/bin/python -m scripts.init_storage
 ```
 
-`submissions-raw`（原本）と `submissions-processed`（マスキング済み）を**非公開**で作成する。
-原本はクライアントに一切返さない。
+`submissions-raw`（原本）と `submissions-processed`（マスキング済み）を**非公開**で作成します。
+原本はクライアントに一切返しません。`SUPABASE_SECRET_KEY` は**サーバー専用**で、
+`NEXT_PUBLIC_` を付けたりフロントに置いたりしないでください。
 
-### 5. マスキング用の重み（任意）
+### Google Maps
 
-顔・車両検出はローカル推論。重みが無い場合はマスキングをスキップして警告を出す。
+**最短（課金設定なし）**: [Maps Demo Key](https://developers.google.com/maps/documentation/javascript/demo-key)
+で「Get a Demo Key」を押すとその場でキーが出ます。プロトタイピング専用・日次クォータあり。
+
+**通常**: [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作り、
+請求先アカウントを紐付けて次の2つを有効化 → 「認証情報」でAPIキーを作成。
+
+- **Maps JavaScript API**（地図本体）
+- **Geocoding API**（画面①でピンを置いた時の住所自動取得）
+
+取得したキーを `frontend/.env.local` の `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` に設定します。
+`next dev` が `.env.local` を自動リロードするので、ブラウザを Cmd+Shift+R で再読み込みしてください。
+
+> `NEXT_PUBLIC_` の値は**ブラウザに露出します**。キーの編集画面で必ず制限してください。
+> アプリケーションの制限 → HTTPリファラー `http://localhost:3000/*` /
+> APIの制限 → `Maps JavaScript API` と `Geocoding API` のみ。
+
+うまく表示されないときはブラウザのコンソール（F12）にGoogleのエラー名が出ます。
+
+| エラー | 原因 |
+|---|---|
+| `InvalidKeyMapError` | キー文字列の誤り（前後の空白・改行） |
+| `ApiNotActivatedMapError` | Maps JavaScript API が未有効 |
+| `BillingNotEnabledMapError` | 請求先アカウント未設定（→ Demo Key を使う） |
+| `RefererNotAllowedMapError` | リファラー制限に `http://localhost:3000/*` が無い |
+
+キーが不正でもアプリは落ちず、手入力フォームへ自動フォールバックします。
+
+### マスキング用の重み
+
+顔・車両検出はローカル推論です。重みが無い場合はマスキングをスキップして警告を出します
+（画像は配信されます）。
 
 ```bash
 cd backend/models_weights
 curl -sLO https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt
 curl -sL -o yolov8n-face.pt https://huggingface.co/arnabdhar/YOLOv8-Face-Detection/resolve/main/model.pt
+```
+
+`yolov8n-face.pt` は公式配布ではありません（第三者のHugging Faceリポジトリ）。
+ライセンスを確認のうえ利用してください。重みは `.gitignore` 済みでコミットされません。
+
+---
+
+## `git pull` した後にやること
+
+| 変わっていたら | 実行するコマンド |
+|---|---|
+| `backend/pyproject.toml` | `cd backend && ./.venv/bin/pip install -e ".[dev]"` |
+| `backend/alembic/versions/` にファイル追加 | `cd backend && ./.venv/bin/alembic upgrade head` |
+| `frontend/package.json` | `cd frontend && npm install` |
+| `.py` / `.tsx` のみ | 何もしなくてよい（`--reload` / `next dev` が自動反映） |
+
+迷ったら次を実行しても壊れません（すべて冪等）。
+
+```bash
+(cd backend && ./.venv/bin/pip install -q -e ".[dev]" && ./.venv/bin/alembic upgrade head && ./.venv/bin/pytest -q)
+(cd frontend && npm install && npx tsc --noEmit)
 ```
 
 ---

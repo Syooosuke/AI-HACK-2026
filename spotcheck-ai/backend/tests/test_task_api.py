@@ -166,6 +166,11 @@ def test_needs_info_then_resubmit_becomes_approved(
         assert body["review"]["missingInfo"] == ["撮影してほしい対象を具体的に記載してください"]
 
         task_id = body["task"]["id"]
+        original_location = (
+            body["task"]["locationLat"],
+            body["task"]["locationLng"],
+            body["task"]["locationAddress"],
+        )
         second = client.post(
             f"/api/tasks/{task_id}/resubmit",
             headers=HEADERS,
@@ -177,6 +182,11 @@ def test_needs_info_then_resubmit_becomes_approved(
     assert second.status_code == 200
     assert second.json()["task"]["status"] == "open"
     assert second.json()["review"]["decision"] == "approved"
+    assert (
+        second.json()["task"]["locationLat"],
+        second.json()["task"]["locationLng"],
+        second.json()["task"]["locationAddress"],
+    ) == original_location
 
 
 def test_rejected_task_is_not_published(
