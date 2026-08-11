@@ -1,13 +1,16 @@
 """テスト共通のセットアップ。
 
-- 専用のテストDB（`<開発DB名>_test`）を作成し、`alembic upgrade head` を適用する。
-  マイグレーション自体もテストで検証されることになる。
+- 専用のテストDB（`<開発DB名>_test_<チェックアウトのハッシュ>`）を作成し、
+  `alembic upgrade head` を適用する。マイグレーション自体もテストで検証されることになる。
+  DB名をチェックアウトごとに分けるのは、複数の git worktree が同じDBを取り合って
+  alembic のリビジョンが食い違うのを防ぐため。
 - ストレージはローカルバックエンドへ固定し、Supabaseへは接続しない。
 - テストごとに全テーブルを TRUNCATE し、デモユーザーを再投入する。
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import uuid
@@ -22,7 +25,12 @@ _DEV_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres:password@localhost:5432/spotcheck"
 )
 _BASE_URL, _, _DEV_DB = _DEV_URL.rpartition("/")
-TEST_DB_NAME = f"{_DEV_DB}_test"
+
+# テストDBはチェックアウト（git worktree）ごとに分ける。
+# 同じDBを複数のブランチで共有すると、片方のマイグレーションで stamp された状態を
+# もう片方が解決できず `Can't locate revision` で全滅する。
+_CHECKOUT_ID = hashlib.sha1(str(Path(__file__).resolve().parents[2]).encode()).hexdigest()[:8]
+TEST_DB_NAME = os.environ.get("TEST_DATABASE_NAME", f"{_DEV_DB}_test_{_CHECKOUT_ID}")
 TEST_DATABASE_URL = f"{_BASE_URL}/{TEST_DB_NAME}"
 
 _STORAGE_DIR = Path(tempfile.mkdtemp(prefix="spotcheck-test-storage-"))
@@ -79,7 +87,16 @@ def _database() -> Iterator[None]:
     from alembic import command
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    command.upgrade(config, "head")
+    try:
+        command.upgrade(config, "head")
+    except Exception:  # noqa: BLE001 - 解決できない状態なら作り直して復旧する
+        # テストDBは全ブランチで共有される。別ブランチのマイグレーションで
+        # stamp されていると `Can't locate revision` で失敗するため、
+        # スキーマごと作り直してから当ブランチのマイグレーションを当て直す。
+        with get_engine().begin() as conn:
+            conn.execute(text("DROP SCHEMA public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+        command.upgrade(config, "head")
 
     yield
 
