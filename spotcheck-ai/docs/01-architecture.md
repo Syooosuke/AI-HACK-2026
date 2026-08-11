@@ -50,7 +50,7 @@ spotcheck-ai/
 │   │   │   ├── config.py         # pydantic-settings による環境変数読み込み
 │   │   │   ├── db.py             # SQLAlchemy Engine / Session
 │   │   │   ├── storage.py        # Supabase Storage アップロード/署名URL発行
-│   │   │   ├── security.py       # デモ用ユーザー解決（X-Demo-User-Id）
+│   │   │   ├── security.py       # パスワードハッシュ化とJWTの発行・検証
 │   │   │   ├── exceptions.py     # 独自例外
 │   │   │   └── logging.py        # 構造化ログ
 │   │   ├── models/               # SQLAlchemy モデル
@@ -110,13 +110,13 @@ spotcheck-ai/
         │           └── status/page.tsx        # ⑦⑧検品結果・再撮影指示
         ├── components/
         │   ├── ui/                            # Button, Card, Badge, Stepper 等
-        │   ├── map/                           # GoogleMap, LocationPicker, TaskMarkers
+        │   ├── map/                           # LocationPicker, TaskMarkers, PlaceSearchBox
         │   ├── task/                          # TaskCard, StatusTimeline, ScorePanel
         │   └── capture/                       # CameraView, MetadataOverlay
         ├── lib/
-        │   ├── api/                           # tasks.ts, submissions.ts, client.ts
+        │   ├── api/                           # auth.ts, tasks.ts, submissions.ts, client.ts
         │   ├── geo.ts                         # 距離計算・座標フォーマット
-        │   └── demoUser.ts                    # デモユーザーの保持と切替
+        │   └── session.ts                     # トークンとユーザー情報の保持
         └── types/
             └── api.ts                         # バックエンドのスキーマに対応する型
 ```
@@ -135,6 +135,11 @@ CORS_ORIGINS=http://localhost:3000
 
 # --- データベース ---
 DATABASE_URL=postgresql+psycopg://postgres:password@localhost:5432/spotcheck
+
+# --- 認証（ログインID＋パスワード / JWT）---
+JWT_SECRET=                    # 未設定なら開発用の固定鍵。本番相当の環境では必ず設定する
+#JWT_EXPIRE_DAYS=30            # ログイン状態を保持する日数
+#BCRYPT_ROUNDS=12              # パスワードハッシュのコスト
 
 # --- Supabase（Dashboard → Settings → API Keys）---
 SUPABASE_URL=

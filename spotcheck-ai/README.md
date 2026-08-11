@@ -26,6 +26,103 @@
 
 ---
 
+## 全体像（アーキテクチャ）
+
+GitHub 上ではそのまま図として表示されます。
+
+```mermaid
+flowchart TB
+    user["スマホ / PC のブラウザ"]
+
+    subgraph cloudrun["Google Cloud Run"]
+        fe["フロントエンド（Next.js 14）<br/>下部タブ・投稿カード・アプリ内カメラ"]
+        be["バックエンド（FastAPI）<br/>認証・依頼／受注／提出・検品パイプライン<br/>YOLO をコンテナ内で実行"]
+    end
+
+    subgraph external["外部サービス"]
+        db[("PostgreSQL<br/>Supabase")]
+        storage[("Supabase Storage<br/>原本／加工済み画像")]
+        orca["OrcaRouter<br/>LLM・VLM"]
+        maps["Google Maps<br/>地図・検索・ストリートビュー"]
+    end
+
+    user -->|"HTTPS"| fe
+    fe -->|"① API 呼び出し<br/>Authorization: Bearer JWT"| be
+    be -->|"② 依頼・受注・いいね等を保存"| db
+    be -->|"③ 画像の保存と署名付きURL発行"| storage
+    be -->|"④ 依頼審査・画像検品・要約"| orca
+    be -->|"⑤ ストリートビュー取得"| maps
+    fe -->|"⑥ 地図・地名検索・ストリートビュー表示"| maps
+```
+
+| # | 何をしているか |
+|---|---|
+| ① | 全APIリクエストに `Authorization: Bearer <JWT>` を付ける。**ロールは無く、1アカウントで「依頼する」「撮影する」の両方**ができる |
+| ② | 依頼・受注・提出・いいね・保存検索を保存。ローカル開発は docker の PostgreSQL、本番は Supabase |
+| ③ | 提出画像の**原本は非公開**で保管し、マスキング済み画像とサムネイルを別バケットへ。配信は署名付きURL |
+| ④ | 依頼審査（テキスト）・画像検品（VLM）・結果要約。**呼び出しは必ず `OrcaClient` 経由**にする |
+| ⑤ | 写真が無い依頼のサムネイルを作るため、サーバーから Street View Static を叩く |
+| ⑥ | ブラウザ側の地図表示・地名検索・ストリートビュー。キーが無い場合は緯度経度の手入力へフォールバック |
+
+> 顔・ナンバープレートの検出は**クラウドのVision APIを使わず**、バックエンドのコンテナ内で
+> YOLO を推論する（画像を外部へ出さないため）。
+
+### 依頼から納品までの流れ
+
+```mermaid
+sequenceDiagram
+    actor client as 依頼者
+    participant app as SpotCheck AI
+    participant ai as AI（OrcaRouter / YOLO）
+    actor worker as 撮影する人
+
+    client->>app: 依頼を作成（地点・条件・報酬）
+    app->>ai: ① 意図解析＋十分性スコアリング
+    ai-->>app: 却下 / 情報補足を要求 / 公開
+    app-->>client: 審査結果を表示
+
+    app-->>worker: 公開された依頼が一覧に並ぶ
+    worker->>app: 受注する
+    worker->>app: アプリ内カメラで撮影<br/>画像＋位置＋時刻を同時送信
+
+    app->>ai: ② VLMで検品（条件を満たすか）
+    app->>ai: ③ 位置偽装の検知
+    app->>ai: ④ 顔・ナンバーを自動マスキング
+
+    alt 不合格
+        ai-->>worker: 再撮影の指示（最大2回まで）
+    else 合格
+        ai-->>app: 合格＋報酬確定
+        app-->>client: 合格した人の分から順に納品
+    end
+```
+
+**人間の目視検品は一切入りません。** 合否はすべてAIが判定し、合格した人から逐次納品されます
+（全員の完了を待ちません）。
+
+### キーが無くても動きます
+
+| 機能 | キー無し | キーあり |
+|---|---|---|
+| 画面・依頼・受注・提出の一連の流れ | ✅ 動く | ✅ 動く |
+| AI審査・画像検品 | 固定応答（スタブ） | OrcaRouter で実推論 |
+| 画像の保存 | ローカルディスク | Supabase Storage |
+| 地図・地名検索・ストリートビュー | 緯度経度の手入力 | Google Maps |
+| 投稿サムネイル | サーバー生成のプレースホルダ | ストリートビュー / AI生成画像 |
+| 顔・ナンバーのマスキング | 重みがあれば動く | 同じ（ローカル推論のため） |
+
+### 本番（Cloud Run）
+
+| サービス | URL |
+|---|---|
+| フロントエンド | https://spotcheck-frontend-dathtekrwq-an.a.run.app |
+| バックエンド | https://spotcheck-backend-dathtekrwq-an.a.run.app |
+
+HTTPSで配信されるため、**スマホからカメラと現在地取得も使えます**。
+デプロイ手順は `docs/07-deployment.md` を参照。
+
+---
+
 ## APIキーの扱い（最初に読んでください）
 
 **APIキーはリポジトリで共有しません。各自が自分のキーを用意するか、キー無しで動かします。**
@@ -67,6 +164,7 @@ python3 -m venv .venv
 cp .env.example .env             # そのままでOK。値は埋めなくても起動する
 ./.venv/bin/alembic upgrade head
 ./.venv/bin/python -m scripts.seed_demo_users
+./.venv/bin/python -m scripts.seed_demo_tasks   # 一覧確認用の投稿（任意）
 ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
@@ -92,7 +190,34 @@ curl -s -o /dev/null -w "backend  %{http_code}\n" http://localhost:8000/api/heal
 curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
 ```
 
-`healthy` / `200` / `200` なら完了です。`http://localhost:3000` を開いてデモシナリオへ進めます。
+`healthy` / `200` / `200` なら完了です。`http://localhost:3000` を開くとログイン画面が出ます。
+
+### 5. ログイン
+
+`scripts.seed_demo_users` で投入されるアカウントを使います（パスワードは全員 `spotcheck123`）。
+
+| ログインID | 表示名 |
+|---|---|
+| `demo_company` | デモ株式会社 |
+| `yamada` | 山田 太郎 |
+| `sato` | 佐藤 花子 |
+| `suzuki` | 鈴木 一郎 |
+
+画面右上の「新規登録」から自分のアカウントを作ることもできます。
+**ロールはありません**。どのアカウントでも「依頼する」と「撮影する」の両方ができます
+（ただし自分が出した依頼は自分で受注できません。動作確認には2アカウント使ってください）。
+
+パスワードを変えたい場合は `DEMO_USER_PASSWORD=好きなパスワード ./.venv/bin/python -m scripts.seed_demo_users`。
+
+### 一覧を賑やかす（任意）
+
+```bash
+cd backend
+./.venv/bin/python -m scripts.seed_demo_tasks        # 募集中の投稿5件（SOLD / HOT / NEW が1つずつ出る）
+./.venv/bin/python -m scripts.regenerate_thumbnails --force  # サムネイルの作り直し
+```
+
+いずれも固定UUIDなので、何度実行しても同じ投稿になります。
 
 ---
 
@@ -104,7 +229,10 @@ curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
 |---|---|---|
 | `ORCA_API_KEY`（backend） | 実際のAI審査・画像検品 | 固定応答のスタブ（デモは通る） |
 | `SUPABASE_URL` + `SUPABASE_SECRET_KEY`（backend） | Supabase Storage への画像保存 | ローカル保存（`LOCAL_STORAGE_DIR`） |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（frontend） | 地図表示・住所の自動取得 | 緯度経度の手入力フォーム |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（frontend） | 地図表示・場所検索・住所の自動取得 | 緯度経度の手入力フォーム |
+| `JWT_SECRET`（backend） | 本番相当のトークン署名 | 開発用の固定鍵（誰でも偽造できる） |
+| `GOOGLE_MAPS_SERVER_API_KEY`（backend） | 写真なし依頼のサムネイルにストリートビューを使う | サーバーが描くプレースホルダ画像 |
+| `ORCA_ROUTER_IMAGE`（backend） | サムネイルのAI画像生成 | ストリートビュー画像かプレースホルダ |
 | `DATABASE_URL`（backend） | 別のDBを使う | docker-compose のローカルDB |
 
 ### AI（OrcaRouter）
@@ -137,14 +265,21 @@ cd backend && ./.venv/bin/python -m scripts.init_storage
 請求先アカウントを紐付けて次の2つを有効化 → 「認証情報」でAPIキーを作成。
 
 - **Maps JavaScript API**（地図本体）
-- **Geocoding API**（画面①でピンを置いた時の住所自動取得）
+- **Geocoding API**（ピンを置いた時の住所自動取得と、地名・住所のテキスト検索）
+- **Places API (New)**（任意。検索ボックスの候補表示。無効でも Geocoding のテキスト検索で動きます）
+- **Street View Static API**（任意。写真なし依頼のサムネイル生成に使用。サーバー側キーへ設定）
+
+> **地名検索が動かない場合**は、この2点がほぼ原因です。
+> ① プロジェクトで**課金（Billing）が有効化されていない** ② **Geocoding API が未有効**。
+> Demo Key は Maps JavaScript API だけが使えるため、地図は出ても検索は `REQUEST_DENIED` になります。
+> 画面には Google が返した理由をそのまま日本語で表示します。
 
 取得したキーを `frontend/.env.local` の `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` に設定します。
 `next dev` が `.env.local` を自動リロードするので、ブラウザを Cmd+Shift+R で再読み込みしてください。
 
 > `NEXT_PUBLIC_` の値は**ブラウザに露出します**。キーの編集画面で必ず制限してください。
 > アプリケーションの制限 → HTTPリファラー `http://localhost:3000/*` /
-> APIの制限 → `Maps JavaScript API` と `Geocoding API` のみ。
+> APIの制限 → `Maps JavaScript API` / `Geocoding API`（＋使う場合は `Places API`）のみ。
 
 うまく表示されないときはブラウザのコンソール（F12）にGoogleのエラー名が出ます。
 
@@ -153,7 +288,12 @@ cd backend && ./.venv/bin/python -m scripts.init_storage
 | `InvalidKeyMapError` | キー文字列の誤り（前後の空白・改行） |
 | `ApiNotActivatedMapError` | Maps JavaScript API が未有効 |
 | `BillingNotEnabledMapError` | 請求先アカウント未設定（→ Demo Key を使う） |
-| `RefererNotAllowedMapError` | リファラー制限に `http://localhost:3000/*` が無い |
+| `RefererNotAllowedMapError` | リファラー制限に**いま開いているURL**が無い（例: `3100` 番で動かしているのに `http://localhost:3000/*` しか許可していない） |
+
+> 「**このページでは Google マップが正しく読み込まれませんでした**」という灰色の表示が出た場合は、
+> 上のいずれかです。ブラウザのコンソール（F12）に上の名前が出ているので、それで切り分けてください。
+> アプリ側は認証失敗を検知して**日本語の対処案内と緯度経度の手入力**に切り替えるため、
+> 地図が使えなくても依頼の作成は続けられます。
 
 キーが不正でもアプリは落ちず、手入力フォームへ自動フォールバックします。
 

@@ -9,11 +9,6 @@ from __future__ import annotations
 import enum
 
 
-class UserRole(str, enum.Enum):
-    CLIENT = "client"
-    WORKER = "worker"
-
-
 class TaskStatus(str, enum.Enum):
     SCREENING = "screening"
     REJECTED = "rejected"
@@ -52,6 +47,17 @@ class PaymentStatus(str, enum.Enum):
     STUB_SUCCEEDED = "stub_succeeded"
     STUB_FAILED = "stub_failed"
 
+
+#: 一度でも掲示板に公開された依頼のステータス（docs/03-api.md 3.4.1）。
+#: 公開プロフィールの統計はこれを母数にする。screening / needs_info / rejected は
+#: 未公開の下書き相当・名誉に関わるため含めない。
+PUBLIC_TASK_STATUSES = (
+    TaskStatus.OPEN,
+    TaskStatus.IN_PROGRESS,
+    TaskStatus.COMPLETED,
+    TaskStatus.EXPIRED,
+    TaskStatus.CANCELLED,
+)
 
 #: 受注枠を使用中とみなす assignment のステータス（docs/02-database.md 2.4）。
 #: failed / cancelled / expired は枠を占有しないため、自動的に他ワーカーへ再開放される（D-08）。

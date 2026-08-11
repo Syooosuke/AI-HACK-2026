@@ -8,33 +8,37 @@ from app.models.ai_invocation import AiInvocation
 from app.models.base import Base
 from app.models.enums import (
     ACTIVE_ASSIGNMENT_STATUSES,
+    PUBLIC_TASK_STATUSES,
     AssignmentStatus,
     PaymentDirection,
     PaymentStatus,
     TaskStatus,
-    UserRole,
     ValidationStatus,
 )
 from app.models.payment import Payment
+from app.models.saved_search import SavedSearch
 from app.models.submission import Submission
 from app.models.task import Task, TaskReferenceImage
 from app.models.task_assignment import TaskAssignment
+from app.models.task_like import TaskLike
 from app.models.user import User
 
 __all__ = [
     "ACTIVE_ASSIGNMENT_STATUSES",
+    "PUBLIC_TASK_STATUSES",
     "AiInvocation",
     "AssignmentStatus",
     "Base",
     "Payment",
     "PaymentDirection",
     "PaymentStatus",
+    "SavedSearch",
     "Submission",
     "Task",
     "TaskAssignment",
+    "TaskLike",
     "TaskReferenceImage",
     "TaskStatus",
     "User",
-    "UserRole",
     "ValidationStatus",
 ]

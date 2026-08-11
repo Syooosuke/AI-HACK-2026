@@ -1,13 +1,16 @@
 """テスト共通のセットアップ。
 
-- 専用のテストDB（`<開発DB名>_test`）を作成し、`alembic upgrade head` を適用する。
-  マイグレーション自体もテストで検証されることになる。
+- 専用のテストDB（`<開発DB名>_test_<チェックアウトのハッシュ>`）を作成し、
+  `alembic upgrade head` を適用する。マイグレーション自体もテストで検証されることになる。
+  DB名をチェックアウトごとに分けるのは、複数の git worktree が同じDBを取り合って
+  alembic のリビジョンが食い違うのを防ぐため。
 - ストレージはローカルバックエンドへ固定し、Supabaseへは接続しない。
 - テストごとに全テーブルを TRUNCATE し、デモユーザーを再投入する。
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import uuid
@@ -22,7 +25,12 @@ _DEV_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres:password@localhost:5432/spotcheck"
 )
 _BASE_URL, _, _DEV_DB = _DEV_URL.rpartition("/")
-TEST_DB_NAME = f"{_DEV_DB}_test"
+
+# テストDBはチェックアウト（git worktree）ごとに分ける。
+# 同じDBを複数のブランチで共有すると、片方のマイグレーションで stamp された状態を
+# もう片方が解決できず `Can't locate revision` で全滅する。
+_CHECKOUT_ID = hashlib.sha1(str(Path(__file__).resolve().parents[2]).encode()).hexdigest()[:8]
+TEST_DB_NAME = os.environ.get("TEST_DATABASE_NAME", f"{_DEV_DB}_test_{_CHECKOUT_ID}")
 TEST_DATABASE_URL = f"{_BASE_URL}/{TEST_DB_NAME}"
 
 _STORAGE_DIR = Path(tempfile.mkdtemp(prefix="spotcheck-test-storage-"))
@@ -38,7 +46,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import get_engine, get_session_factory
-from app.models import Base, Task, TaskAssignment, User, UserRole
+from app.core.security import create_access_token, hash_password
+from app.models import Base, Task, TaskAssignment, User
 
 TABLES_IN_TRUNCATE_ORDER = (
     "payments",
@@ -53,6 +62,10 @@ TABLES_IN_TRUNCATE_ORDER = (
 CLIENT_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 WORKER_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 WORKER2_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
+
+#: テスト用の共通パスワード。ハッシュ化のコストを抑えるため使い回す。
+TEST_PASSWORD = "test-password"
+_TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -79,7 +92,16 @@ def _database() -> Iterator[None]:
     from alembic import command
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    command.upgrade(config, "head")
+    try:
+        command.upgrade(config, "head")
+    except Exception:  # noqa: BLE001 - 解決できない状態なら作り直して復旧する
+        # テストDBは全ブランチで共有される。別ブランチのマイグレーションで
+        # stamp されていると `Can't locate revision` で失敗するため、
+        # スキーマごと作り直してから当ブランチのマイグレーションを当て直す。
+        with get_engine().begin() as conn:
+            conn.execute(text("DROP SCHEMA public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+        command.upgrade(config, "head")
 
     yield
 
@@ -105,21 +127,31 @@ def session() -> Iterator[Session]:
 
 @pytest.fixture
 def users(session: Session) -> dict[str, User]:
-    """デモユーザー（クライアント1名・ワーカー2名）を投入する。"""
+    """テスト用ユーザーを投入する。
+
+    role は廃止したため、どのユーザーも依頼の作成と受注の両方ができる。
+    キー名（client / worker）はテスト内での役割の区別であって権限ではない。
+    """
     created = {
         "client": User(
-            id=CLIENT_ID, role=UserRole.CLIENT, display_name="デモ株式会社", email="c@example.com"
+            id=CLIENT_ID,
+            login_id="demo_company",
+            password_hash=_TEST_PASSWORD_HASH,
+            display_name="デモ株式会社",
+            email="c@example.com",
         ),
         "worker": User(
             id=WORKER_ID,
-            role=UserRole.WORKER,
+            login_id="yamada",
+            password_hash=_TEST_PASSWORD_HASH,
             display_name="山田 太郎",
             email="w1@example.com",
             trust_score=92,
         ),
         "worker2": User(
             id=WORKER2_ID,
-            role=UserRole.WORKER,
+            login_id="sato",
+            password_hash=_TEST_PASSWORD_HASH,
             display_name="佐藤 花子",
             email="w2@example.com",
             trust_score=78,
@@ -128,6 +160,12 @@ def users(session: Session) -> dict[str, User]:
     session.add_all(created.values())
     session.commit()
     return created
+
+
+def auth_headers(user: User | uuid.UUID) -> dict[str, str]:
+    """指定ユーザーとしてAPIを叩くための Authorization ヘッダーを作る。"""
+    user_id = user if isinstance(user, uuid.UUID) else user.id
+    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
 
 
 def make_task(
@@ -190,9 +228,11 @@ def store_raw_image(key: str, bucket: str | None = None) -> None:
 
 __all__ = [
     "CLIENT_ID",
+    "TEST_PASSWORD",
     "WORKER2_ID",
     "WORKER_ID",
     "Base",
+    "auth_headers",
     "make_assignment",
     "make_task",
     "store_raw_image",

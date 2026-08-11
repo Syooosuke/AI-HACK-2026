@@ -3,6 +3,8 @@
 from app.repositories import (
     ai_invocation_repo,
     assignment_repo,
+    like_repo,
+    saved_search_repo,
     submission_repo,
     task_repo,
     user_repo,
@@ -11,6 +13,8 @@ from app.repositories import (
 __all__ = [
     "ai_invocation_repo",
     "assignment_repo",
+    "like_repo",
+    "saved_search_repo",
     "submission_repo",
     "task_repo",
     "user_repo",

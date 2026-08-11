@@ -20,7 +20,6 @@ from app.models import (
     Task,
     TaskAssignment,
     User,
-    UserRole,
     ValidationStatus,
 )
 from app.repositories import assignment_repo, submission_repo, task_repo
@@ -34,7 +33,8 @@ from app.schemas.submission import (
     TaskResultItem,
     TaskResultsResponse,
 )
-from app.schemas.user import TRUST_SCORE_TO_STARS_DIVISOR, WorkerSummary
+from app.schemas.user import WorkerSummary
+from app.services import avatar_service
 from app.services.exif import extract_exif
 from app.services.orca_client import get_orca_client
 from app.services.result_summary import generate_result_summary
@@ -152,10 +152,9 @@ async def get_submission_status(
     if assignment is None or task is None:
         raise NotFound("指定された提出が見つかりません。", code="SUBMISSION_NOT_FOUND")
 
-    if user.role is UserRole.WORKER and submission.worker_id != user.id:
-        raise Forbidden("他のワーカーの提出は参照できません。")
-    if user.role is UserRole.CLIENT and task.client_id != user.id:
-        raise Forbidden("他のクライアントの依頼の提出は参照できません。")
+    # 参照できるのは「提出したワーカー本人」と「依頼のオーナー」のみ
+    if submission.worker_id != user.id and task.client_id != user.id:
+        raise Forbidden("この提出を参照する権限がありません。")
 
     feedback = submission.ai_feedback or {}
     checks = feedback.get("checks", {})
@@ -241,8 +240,8 @@ async def get_task_results(
                 location_check=submission.location_check,
                 worker=WorkerSummary(
                     display_name=worker.display_name,
-                    trust_score=round(float(worker.trust_score) / TRUST_SCORE_TO_STARS_DIVISOR, 1),
-                    avatar_url=worker.avatar_url,
+                    trust_score=float(worker.trust_score),
+                    avatar_url=avatar_service.public_url(worker),
                 ),
             )
         )

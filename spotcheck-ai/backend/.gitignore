@@ -1,6 +1,9 @@
 # Python
 __pycache__/
 *.py[cod]
+# 末尾スラッシュ無しも書く。git worktree では .venv を共有のためシンボリックリンクにすることがあり、
+# `.venv/` だけではリンク（＝ディレクトリではない）に一致せず追跡対象になってしまう
+.venv
 .venv/
 venv/
 *.egg-info/

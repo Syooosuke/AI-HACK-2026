@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_session_factory
 from app.core.exceptions import AppError, Conflict
+from app.core.storage import get_storage
 from app.models import AssignmentStatus, Submission, TaskStatus, User, ValidationStatus
 from app.repositories import assignment_repo, submission_repo
-from app.services import submission_pipeline, task_service
+from app.services import masking, submission_pipeline, task_service
 from tests.conftest import make_assignment, make_task, store_raw_image
 
 
@@ -106,8 +107,16 @@ def _submit_and_validate(session: Session, *, task, assignment, worker: User) ->
     return submission
 
 
-def test_retake_loop_first_reject_then_approve(session: Session, users: dict[str, User]) -> None:
+def test_retake_loop_first_reject_then_approve(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """スタブは奇数回目を不合格にするため、1回目不合格 → 2回目合格になる。"""
+    # YOLOの重みは .gitignore 対象で、クローン直後やワークツリーには存在しない。
+    # 重みの有無でマスキングの skipped が変わりテストが環境依存になるため、
+    # 検出器を差し替えて「重みはあるが検出0件」の状態に固定する。
+    monkeypatch.setattr(masking, "load_models", lambda: masking._Models("general", "face", None))
+    monkeypatch.setattr(masking, "_detect", lambda *_args, **_kwargs: [])
+
     task = make_task(session, client=users["client"])
     assignment = make_assignment(session, task=task, worker=users["worker"])
 
@@ -212,11 +221,18 @@ def test_expired_task_is_not_reopened(session: Session, users: dict[str, User]) 
     assert task.status is TaskStatus.IN_PROGRESS
 
 
-def test_expired_task_is_hidden_from_nearby(session: Session, users: dict[str, User]) -> None:
+async def test_expired_task_is_hidden_from_nearby(session: Session, users: dict[str, User]) -> None:
     """期限切れの依頼は近傍検索に出てこない。"""
     make_task(session, client=users["client"], deadline_offset_hours=-1)
-    found = task_service.find_nearby(
-        session, lat=35.6595, lng=139.7005, radius_km=5, limit=50, sort="distance"
+    found = await task_service.find_nearby(
+        session,
+        viewer=users["worker"],
+        storage=get_storage(),
+        lat=35.6595,
+        lng=139.7005,
+        radius_km=5,
+        limit=50,
+        sort="distance",
     )
     assert found == []
 

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import { AppShell } from "@/components/layout/AppShell";
 import { ToastProvider } from "@/components/ui/Toast";
 
@@ -38,7 +39,9 @@ export default function RootLayout({
     <html lang="ja">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ToastProvider>
-          <AppShell>{children}</AppShell>
+          <AppShell>
+            <AuthGuard>{children}</AuthGuard>
+          </AppShell>
         </ToastProvider>
       </body>
     </html>
