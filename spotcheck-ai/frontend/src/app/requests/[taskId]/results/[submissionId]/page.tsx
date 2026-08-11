@@ -6,7 +6,9 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, EmptyState, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
+import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
+import { TrustBar, TrustGauge } from "@/components/ui/TrustGauge";
 import { toMessage } from "@/lib/api/errorMessages";
 import { resolveApiUrl } from "@/lib/api/client";
 import { getTask, getTaskResults } from "@/lib/api/tasks";
@@ -48,8 +50,6 @@ export default function ResultDetailPage() {
   if (result === null) {
     return <EmptyState message="この提出は見つかりませんでした。" />;
   }
-
-  const stars = "★".repeat(Math.round(result.worker.trustScore)).padEnd(5, "☆");
 
   return (
     <div className="space-y-5 md:mx-auto md:max-w-2xl">
@@ -101,9 +101,7 @@ export default function ResultDetailPage() {
         >
           <SectionTitle>Reality Score / 信頼度</SectionTitle>
           <span className="flex items-center gap-2">
-            <span className="rounded-full bg-ai px-2.5 py-1 text-xs font-bold text-white">
-              {result.realityScore == null ? "未算出" : `${result.realityScore} / 100`}
-            </span>
+            <TrustBar score={result.realityScore} label="Reality Score" />
             <span className="text-slate-400">{openBreakdown ? "▲" : "▼"}</span>
           </span>
         </button>
@@ -142,19 +140,15 @@ export default function ResultDetailPage() {
 
       <Card>
         <SectionTitle>ワーカー評価</SectionTitle>
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-lg">
-            👤
-          </span>
-          <div>
-            <p className="text-sm font-bold text-slate-800">{result.worker.displayName}</p>
-            <p className="text-sm text-amber-500">
-              {stars}
-              <span className="ml-1 text-xs text-slate-500">
-                {result.worker.trustScore.toFixed(1)}
-              </span>
+        <div className="flex items-center gap-4">
+          <Avatar name={result.worker.displayName} src={result.worker.avatarUrl} size="md" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-800">
+              {result.worker.displayName}
             </p>
+            <p className="text-xs text-slate-500">信頼度スコア</p>
           </div>
+          <TrustGauge score={result.worker.trustScore} label="ワーカーの信頼度スコア" size="sm" />
         </div>
       </Card>
 

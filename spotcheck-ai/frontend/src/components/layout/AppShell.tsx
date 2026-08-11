@@ -15,6 +15,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { isPublicPath } from "@/components/auth/AuthGuard";
+import { Avatar } from "@/components/ui/Avatar";
 import { getCurrentUser, subscribeSession } from "@/lib/session";
 import type { AuthUser } from "@/types/api";
 
@@ -108,8 +109,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         {user && (
           <Link
             href="/me"
-            className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 px-2 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
           >
+            <Avatar name={user.displayName} src={user.avatarUrl} size="xs" />
             <span className="truncate">{user.displayName}</span>
           </Link>
         )}
@@ -135,8 +137,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <Link
             href="/me"
-            className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 md:hidden"
+            aria-label="マイページ"
+            className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-1 pr-3 text-xs font-bold text-slate-600 hover:bg-slate-50 md:hidden"
           >
+            <Avatar name={user?.displayName ?? "ゲスト"} src={user?.avatarUrl} size="xs" />
             <span className="max-w-[8rem] truncate">{user?.displayName ?? "ゲスト"}</span>
           </Link>
         </header>

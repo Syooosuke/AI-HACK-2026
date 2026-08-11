@@ -11,8 +11,10 @@ import { useCallback, useEffect, useState } from "react";
 import { StreetViewPanel } from "@/components/map/StreetViewPanel";
 import { CornerBadge } from "@/components/task/CornerBadge";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
+import { Avatar } from "@/components/ui/Avatar";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
+import { TrustBar } from "@/components/ui/TrustGauge";
 import { ApiError, resolveApiUrl } from "@/lib/api/client";
 import { likeTask, unlikeTask } from "@/lib/api/social";
 import { toMessage } from "@/lib/api/errorMessages";
@@ -217,7 +219,13 @@ export default function WorkerTaskDetailPage() {
           {task.owner && (
             <InfoRow
               label="依頼主"
-              value={`${task.owner.displayName}（信頼度 ${task.owner.trustScore.toFixed(1)}）`}
+              value={
+                <span className="flex items-center justify-end gap-2">
+                  <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="xs" />
+                  <span className="max-w-[7rem] truncate">{task.owner.displayName}</span>
+                  <TrustBar score={task.owner.trustScore} label="依頼主の信頼度スコア" />
+                </span>
+              }
               icon={<span>🧑‍💼</span>}
             />
           )}

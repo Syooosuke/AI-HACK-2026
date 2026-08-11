@@ -86,6 +86,7 @@ export default function ReviewPage() {
       <Card>
         <ScorePanel
           score={review.score}
+          label="情報の十分性スコア"
           caption="情報の十分性スコア"
           items={[
             { label: "内容の妥当性チェック", ok: review.checks.validity === "pass" },

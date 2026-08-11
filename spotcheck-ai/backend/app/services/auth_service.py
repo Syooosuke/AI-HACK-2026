@@ -19,6 +19,7 @@ from app.core.security import (
 from app.models import User
 from app.repositories import user_repo
 from app.schemas.auth import AuthResponse, AuthUser, LoginRequest, SignupRequest
+from app.services import avatar_service
 
 logger = get_logger(__name__)
 
@@ -33,7 +34,7 @@ def _to_auth_user(user: User) -> AuthUser:
         display_name=user.display_name,
         trust_score=float(user.trust_score),
         completed_task_count=user.completed_task_count,
-        avatar_url=user.avatar_url,
+        avatar_url=avatar_service.public_url(user),
     )
 
 

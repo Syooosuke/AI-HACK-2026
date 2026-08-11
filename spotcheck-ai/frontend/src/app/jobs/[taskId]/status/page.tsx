@@ -108,6 +108,7 @@ export default function SubmissionStatusPage() {
       <Card>
         <ScorePanel
           score={processing ? null : data.aiScore}
+          label="画像検品スコア"
           caption={processing ? "検品しています…" : "画像検品スコア"}
           items={[
             { label: "構図確認", ok: processing ? null : data.checks.framingOk },

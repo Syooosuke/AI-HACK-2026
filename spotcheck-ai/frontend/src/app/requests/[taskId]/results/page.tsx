@@ -11,7 +11,9 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Card, EmptyState, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
+import { Avatar } from "@/components/ui/Avatar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { TrustBar, TrustGauge } from "@/components/ui/TrustGauge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { resolveApiUrl } from "@/lib/api/client";
@@ -89,27 +91,28 @@ export default function ResultsPage() {
                 </div>
               )}
 
-              <div className="border-t border-slate-100 pt-2">
-                <InfoRow label="撮影時刻" value={formatDateTime(result.capturedAt)} />
-                <InfoRow
-                  label="撮影位置"
-                  value={result.locationLabel ?? formatCoords(result.capturedLat, result.capturedLng)}
-                />
-                <InfoRow
-                  label="信頼度スコア"
-                  value={
-                    result.realityScore == null ? (
-                      <span className="text-slate-400">未算出</span>
-                    ) : (
-                      `${result.realityScore} / 100`
-                    )
-                  }
-                />
+              <div className="flex items-center gap-4 border-t border-slate-100 pt-3">
+                <TrustGauge score={result.realityScore} label="信頼度スコア" size="md" />
+                <div className="min-w-0 flex-1">
+                  <InfoRow label="撮影時刻" value={formatDateTime(result.capturedAt)} />
+                  <InfoRow
+                    label="撮影位置"
+                    value={
+                      result.locationLabel ?? formatCoords(result.capturedLat, result.capturedLng)
+                    }
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-slate-500">
-                  撮影: {result.worker.displayName}（★{result.worker.trustScore.toFixed(1)}）
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                  <Avatar
+                    name={result.worker.displayName}
+                    src={result.worker.avatarUrl}
+                    size="xs"
+                  />
+                  <span className="truncate">{result.worker.displayName}</span>
+                  <TrustBar score={result.worker.trustScore} label="ワーカーの信頼度スコア" />
                 </p>
                 <Link
                   href={`/requests/${taskId}/results/${result.submissionId}`}

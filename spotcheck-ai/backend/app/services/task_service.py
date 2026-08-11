@@ -36,7 +36,7 @@ from app.schemas.task import (
     TaskSummary,
     TimelineStep,
 )
-from app.services import task_card, task_review
+from app.services import avatar_service, task_card, task_review
 from app.services.orca_client import OrcaClient
 from app.services.uploads import extension_for, read_and_validate_image
 
@@ -390,6 +390,7 @@ async def build_task_detail(
                 display_name=owner.display_name,
                 trust_score=float(owner.trust_score),
                 completed_task_count=owner.completed_task_count,
+                avatar_url=avatar_service.public_url(owner),
             )
             if owner is not None
             else None

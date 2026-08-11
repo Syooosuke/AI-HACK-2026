@@ -110,8 +110,10 @@ class TaskOwner(CamelModel):
     """依頼主（投稿者）の表示用情報。"""
 
     display_name: str
+    #: 0〜100。画面ではゲージで表示する
     trust_score: float
     completed_task_count: int
+    avatar_url: str | None = None
 
 
 class TaskDetail(CamelModel):
