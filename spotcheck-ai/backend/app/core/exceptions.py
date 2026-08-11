@@ -78,6 +78,14 @@ class StorageError(AppError):
     message = "画像の保存に失敗しました。"
 
 
+class StorageObjectNotFound(StorageError):
+    """指定したキーの画像が存在しない。保存や通信の失敗（500）とは区別する。"""
+
+    status_code = 404
+    code = "NOT_FOUND"
+    message = "画像が見つかりません。"
+
+
 class AIServiceError(AppError):
     status_code = 502
     code = "AI_SERVICE_ERROR"

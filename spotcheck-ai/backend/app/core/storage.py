@@ -18,12 +18,35 @@ from pathlib import Path
 import httpx
 
 from app.core.config import Settings, get_settings
-from app.core.exceptions import StorageError
+from app.core.exceptions import StorageError, StorageObjectNotFound
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 DEFAULT_SIGNED_URL_TTL_SECONDS = 3600  # docs/03-api.md 1.4: 有効期限1時間
+
+
+def _is_object_not_found(response: httpx.Response) -> bool:
+    """Supabase Storage の「オブジェクトが無い」応答を判定する。
+
+    実測では **HTTP 400** に `{"statusCode":"404","error":"not_found","code":"NoSuchKey"}`
+    を載せて返してくるため、ステータスコードだけでは区別できない。
+    """
+    if response.status_code == 404:
+        return True
+    if response.status_code != 400:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict):
+        return False
+    return (
+        str(body.get("statusCode")) == "404"
+        or body.get("error") == "not_found"
+        or body.get("code") == "NoSuchKey"
+    )
 
 
 class StorageBackend(ABC):
@@ -58,7 +81,9 @@ class SupabaseStorageBackend(StorageBackend):
 
     name = "supabase"
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None
+    ) -> None:
         self._settings = settings
         self._base_url = f"{settings.supabase_url.rstrip('/')}/storage/v1"
         self._client = httpx.AsyncClient(
@@ -68,6 +93,7 @@ class SupabaseStorageBackend(StorageBackend):
                 "apikey": settings.supabase_key,
             },
             timeout=30.0,
+            transport=transport,
         )
 
     async def ensure_buckets(self) -> dict[str, str]:
@@ -114,6 +140,8 @@ class SupabaseStorageBackend(StorageBackend):
     async def download(self, *, bucket: str, key: str) -> bytes:
         response = await self._client.get(f"/object/{bucket}/{key}")
         if response.status_code >= 300:
+            if _is_object_not_found(response):
+                raise StorageObjectNotFound(details={"bucket": bucket, "key": key})
             raise StorageError(
                 "画像の取得に失敗しました。",
                 details={"status": response.status_code, "body": response.text[:500]},
@@ -172,7 +200,7 @@ class LocalStorageBackend(StorageBackend):
     async def download(self, *, bucket: str, key: str) -> bytes:
         path = self._path(bucket, key)
         if not path.exists():
-            raise StorageError("画像が見つかりません。", details={"bucket": bucket, "key": key})
+            raise StorageObjectNotFound(details={"bucket": bucket, "key": key})
         return path.read_bytes()
 
     async def create_signed_url(

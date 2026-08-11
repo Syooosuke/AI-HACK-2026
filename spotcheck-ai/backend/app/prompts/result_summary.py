@@ -13,7 +13,7 @@ def build_user_prompt(task: Task, observations: list[str]) -> str:
     observed = "\n".join(f"- {item}" for item in observations if item) or "（個別所見なし）"
     return f"""【依頼タイトル】{task.title}
 【依頼内容】{task.description}
-【撮影地点】{task.location_address or f'{task.location_lat}, {task.location_lng}'}
+【撮影地点】{task.location_address or f"{task.location_lat}, {task.location_lng}"}
 【画像検品時の個別所見】
 {observed}
 
