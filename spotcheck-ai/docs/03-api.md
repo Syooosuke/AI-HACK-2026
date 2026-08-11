@@ -73,6 +73,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | POST | `/api/users/me/avatar` | 必須 | 自分のアイコン画像を差し替える |
 | DELETE | `/api/users/me/avatar` | 必須 | 自分のアイコン画像を削除して既定へ戻す |
 | GET | `/api/users/{userId}/avatar` | - | アイコン画像の配信（`<img>` から直接読む） |
+| GET | `/api/users/{userId}/public` | 必須 | 公開プロフィール（閲覧用） |
 | POST | `/api/tasks` | 必須 | 依頼作成＋AI審査（同期） |
 | POST | `/api/tasks/{taskId}/resubmit` | 必須 | 補足情報を追記して再審査（オーナーのみ） |
 | GET | `/api/tasks` | 必須 | 自分が出した依頼の一覧 |
@@ -320,7 +321,24 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 依頼のオーナー（`client_id` が自分）か、それ以外（撮影する側）かで返す内容を変える。
 
-**共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[]
+**共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[], createdAt, owner, thumbnailUrl, badges, likeCount, isLiked, viewCount, isMine
+
+`owner` は依頼主。`id` を使って公開プロフィール（3.4.1）へ遷移できる。
+`publishedTaskCount` / `completionRate` は依頼者としての実績で、受注前に「どんな依頼者か」を
+判断できるようにするために出す。**母数は公開された依頼のみ**で、却下・審査中は含めない。
+自分の依頼を見た場合も同じ形で返す（出し分けはしない）。
+
+```json
+"owner": {
+  "id": "uuid",
+  "displayName": "デモ株式会社",
+  "trustScore": 92.0,
+  "completedTaskCount": 3,
+  "avatarUrl": null,
+  "publishedTaskCount": 12,
+  "completionRate": 0.75
+}
+```
 
 **オーナーのとき追加**: `timeline`（画面③の進行状況タイムライン）
 ```json
@@ -337,6 +355,50 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 **オーナー以外のとき追加**: `distanceKm`（クエリ `lat`/`lng` があれば計算）、`myAssignment`（自分の受注状況。無ければ null）
 
 > **撮影する側には他ワーカーの提出画像を返さない。**
+
+---
+
+### 3.4.1 `GET /api/users/{userId}/public` — 公開プロフィール（閲覧用）
+
+依頼詳細の依頼主行から遷移する閲覧専用ページ用。**ロールによる出し分けはなく、ログインしていれば誰でも参照できる**
+（1アカウントが依頼者とワーカーの両面を持ちうる）。認証は必要。
+
+**レスポンス `200`**
+
+```json
+{
+  "id": "uuid",
+  "displayName": "デモ株式会社",
+  "avatarUrl": null,
+  "joinedAt": "2026-08-01T00:00:00+09:00",
+  "asRequester": {
+    "publishedTaskCount": 12,
+    "completedTaskCount": 9,
+    "completionRate": 0.75
+  },
+  "asWorker": {
+    "trustScore": 4.6,
+    "approvedSubmissionCount": 8
+  }
+}
+```
+
+- `404 USER_NOT_FOUND`: 存在しないユーザー
+- `asRequester.completionRate` は母数0のとき `null`
+- `asWorker.trustScore` は 0〜100 のまま返す（画面はゲージで表示する）
+- 実績が0の側も省略せず返す（表示側で空状態を出す）
+
+**公開してはならない項目**（実装は `app/services/user_service.py` に集約する）
+
+| 項目 | 理由 |
+|---|---|
+| `email` / `login_id` | 個人情報・認証情報 |
+| 却下（`rejected`）・審査中（`screening`）・情報補足待ち（`needs_info`）の依頼 | 却下件数が見えると「危険な依頼を出した人」と特定でき名誉に関わる。未公開の下書き相当 |
+| 平均報酬 | 依頼者にとって相場を見られる不利がある（値下げ圧力・相場の固定化） |
+| 依頼の本文・位置情報 | 個別の依頼詳細で足りる。プロフィールで束ねると行動追跡に使える |
+
+統計の母数は**一度でも公開された依頼**、すなわち
+`status IN ('open','in_progress','completed','expired','cancelled')`。
 
 ---
 

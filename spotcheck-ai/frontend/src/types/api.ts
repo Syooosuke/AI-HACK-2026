@@ -135,6 +135,28 @@ export type ReferenceImage = {
   sortOrder: number;
 };
 
+export type RequesterStats = {
+  publishedTaskCount: number;
+  completedTaskCount: number;
+  completionRate: number | null;
+};
+
+export type WorkerStats = {
+  /** 0〜100。画面ではゲージで表示する。 */
+  trustScore: number;
+  approvedSubmissionCount: number;
+};
+
+/** 閲覧専用の公開プロフィール。email / loginId は含まれない。 */
+export type PublicProfile = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  joinedAt: string;
+  asRequester: RequesterStats;
+  asWorker: WorkerStats;
+};
+
 /** 投稿カードの左上に出すタグ。 */
 export type TaskBadge = "sold" | "new" | "hot";
 
@@ -169,11 +191,16 @@ export type TaskDetail = {
 
 /** 依頼主（投稿者）。 */
 export type TaskOwner = {
+  /** 公開プロフィール `/users/[id]` への導線に使う */
+  id: string;
   displayName: string;
   /** 0〜100。画面ではゲージで表示する。 */
   trustScore: number;
   completedTaskCount: number;
   avatarUrl: string | null;
+  publishedTaskCount: number;
+  /** 母数0のときは null */
+  completionRate: number | null;
 };
 
 /** 投稿一覧（ホーム・さがす・ハート欄）に並べる1件分。 */

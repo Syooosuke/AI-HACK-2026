@@ -30,13 +30,12 @@ from app.schemas.task import (
     ReferenceImage,
     TaskDetail,
     TaskListItem,
-    TaskOwner,
     TaskResubmitRequest,
     TaskReviewResponse,
     TaskSummary,
     TimelineStep,
 )
-from app.services import avatar_service, task_card, task_review
+from app.services import task_card, task_review, user_service
 from app.services.orca_client import OrcaClient
 from app.services.uploads import extension_for, read_and_validate_image
 
@@ -385,16 +384,9 @@ async def build_task_detail(
         review_summary=task.review_summary,
         reference_images=reference_images,
         created_at=task.created_at,
-        owner=(
-            TaskOwner(
-                display_name=owner.display_name,
-                trust_score=float(owner.trust_score),
-                completed_task_count=owner.completed_task_count,
-                avatar_url=avatar_service.public_url(owner),
-            )
-            if owner is not None
-            else None
-        ),
+        # 依頼主。公開プロフィールへ遷移できるよう id と依頼者としての実績も含める
+        # （docs/03-api.md 3.4.1）。自分の依頼を見た場合も同じ形で返す。
+        owner=(user_service.build_task_owner(session, owner) if owner is not None else None),
         thumbnail_url=thumbnail_url,
         badges=task_card.build_badges(task),
         like_count=task.like_count,

@@ -107,13 +107,23 @@ class MyAssignment(CamelModel):
 
 
 class TaskOwner(CamelModel):
-    """依頼主（投稿者）の表示用情報。"""
+    """依頼主（投稿者）の表示用情報。
 
+    `id` は公開プロフィール `/users/[userId]` への導線に使う（docs/03-api.md 3.4.1）。
+    `published_task_count` / `completion_rate` は依頼者としての実績で、
+    受注前に「どんな依頼者か」を判断できるようにするために出す。
+    母数は公開された依頼のみで、却下・審査中の依頼は含めない。
+    """
+
+    id: uuid.UUID
     display_name: str
     #: 0〜100。画面ではゲージで表示する
     trust_score: float
     completed_task_count: int
     avatar_url: str | None = None
+    published_task_count: int = 0
+    #: completed / published。母数0なら null
+    completion_rate: float | None = None
 
 
 class TaskDetail(CamelModel):

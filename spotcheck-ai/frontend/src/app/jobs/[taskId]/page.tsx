@@ -5,6 +5,7 @@
  * 投稿カードをタップするとここへ来る。依頼主が入力した内容を一通り表示する。
  */
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -220,11 +221,27 @@ export default function WorkerTaskDetailPage() {
             <InfoRow
               label="依頼主"
               value={
-                <span className="flex items-center justify-end gap-2">
+                // 受注前に「どんな依頼者か」を確かめられるよう、公開プロフィールへ遷移させる
+                <Link
+                  href={`/users/${task.owner.id}`}
+                  className="flex items-center justify-end gap-2 hover:opacity-80"
+                >
                   <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="xs" />
-                  <span className="max-w-[7rem] truncate">{task.owner.displayName}</span>
+                  <span className="flex flex-col items-end">
+                    <span className="max-w-[7rem] truncate font-medium text-client">
+                      {task.owner.displayName}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {task.owner.completionRate == null
+                        ? "依頼実績なし"
+                        : `完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件`}
+                    </span>
+                  </span>
                   <TrustBar score={task.owner.trustScore} label="依頼主の信頼度スコア" />
-                </span>
+                  <span aria-hidden className="text-slate-300">
+                    ›
+                  </span>
+                </Link>
               }
               icon={<span>🧑‍💼</span>}
             />
