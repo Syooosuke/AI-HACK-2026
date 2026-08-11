@@ -12,8 +12,10 @@ import { useCallback, useEffect, useState } from "react";
 import { StreetViewPanel } from "@/components/map/StreetViewPanel";
 import { CornerBadge } from "@/components/task/CornerBadge";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
+import { Avatar } from "@/components/ui/Avatar";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
+import { TrustBar } from "@/components/ui/TrustGauge";
 import { ApiError, resolveApiUrl } from "@/lib/api/client";
 import { likeTask, unlikeTask } from "@/lib/api/social";
 import { toMessage } from "@/lib/api/errorMessages";
@@ -222,14 +224,20 @@ export default function WorkerTaskDetailPage() {
                 // 受注前に「どんな依頼者か」を確かめられるよう、公開プロフィールへ遷移させる
                 <Link
                   href={`/users/${task.owner.id}`}
-                  className="inline-flex items-center gap-1 font-medium text-client underline-offset-2 hover:underline"
+                  className="flex items-center justify-end gap-2 hover:opacity-80"
                 >
-                  {task.owner.displayName}
-                  <span className="text-xs text-slate-500">
-                    {task.owner.completionRate == null
-                      ? "（依頼実績なし）"
-                      : `（完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件）`}
+                  <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="xs" />
+                  <span className="flex flex-col items-end">
+                    <span className="max-w-[7rem] truncate font-medium text-client">
+                      {task.owner.displayName}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {task.owner.completionRate == null
+                        ? "依頼実績なし"
+                        : `完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件`}
+                    </span>
                   </span>
+                  <TrustBar score={task.owner.trustScore} label="依頼主の信頼度スコア" />
                   <span aria-hidden className="text-slate-300">
                     ›
                   </span>

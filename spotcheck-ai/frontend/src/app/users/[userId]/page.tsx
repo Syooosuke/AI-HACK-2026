@@ -12,9 +12,11 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Card, EmptyState, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
+import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
+import { TrustGauge } from "@/components/ui/TrustGauge";
 import { toMessage } from "@/lib/api/errorMessages";
-import { getPublicProfile } from "@/lib/api/profile";
+import { getPublicProfile } from "@/lib/api/users";
 import type { PublicProfile } from "@/types/api";
 
 const JOINED_FORMAT = new Intl.DateTimeFormat("ja-JP", {
@@ -62,19 +64,7 @@ export default function PublicProfilePage() {
   return (
     <div className="space-y-5">
       <Card className="flex items-center gap-4">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-2xl">
-          {profile.avatarUrl ? (
-            // next/image は任意ホストの画像を許可設定なしに扱えないため img を使う
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.avatarUrl}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            "👤"
-          )}
-        </span>
+        <Avatar name={profile.displayName} src={profile.avatarUrl} size="lg" />
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-slate-800">{profile.displayName}</h1>
           <p className="text-xs text-slate-500">
@@ -106,20 +96,18 @@ export default function PublicProfilePage() {
       <Card>
         <SectionTitle>ワーカーとしての実績</SectionTitle>
         {hasWorkerHistory ? (
-          <>
-            <InfoRow
-              label="信頼度"
-              value={
-                <span className="text-amber-500">
-                  {"★".repeat(Math.round(asWorker.trustScore)).padEnd(5, "☆")}
-                  <span className="ml-1 text-xs text-slate-500">
-                    {asWorker.trustScore.toFixed(1)}
-                  </span>
-                </span>
-              }
+          <div className="flex items-center gap-4 py-1">
+            {/* 5段階へ換算せず 0〜100 のままゲージで見せる（docs/03-api.md 3.4.1） */}
+            <TrustGauge
+              score={asWorker.trustScore}
+              label="信頼度スコア"
+              size="md"
+              caption="信頼度スコア"
             />
-            <InfoRow label="合格した提出" value={`${asWorker.approvedSubmissionCount}件`} />
-          </>
+            <div className="min-w-0 flex-1">
+              <InfoRow label="合格した提出" value={`${asWorker.approvedSubmissionCount}件`} />
+            </div>
+          </div>
         ) : (
           <p className="py-2 text-sm text-slate-500">まだ撮影の実績がありません。</p>
         )}

@@ -96,11 +96,11 @@ def test_completion_rate(
 # ----------------------------------------------------------------------
 # 両面表示
 # ----------------------------------------------------------------------
-def test_worker_stats_use_five_star_scale(session: Session, users: dict[str, User]) -> None:
-    """信頼度は5段階へ換算する（trust_score 92 → 4.6）。"""
+def test_worker_stats_keep_hundred_point_scale(session: Session, users: dict[str, User]) -> None:
+    """信頼度は 0〜100 のまま返す（画面が TrustGauge で表示するため換算しない）。"""
     profile = user_service.build_public_profile(session, WORKER_ID)
 
-    assert profile.as_worker.trust_score == 4.6
+    assert profile.as_worker.trust_score == 92.0
     assert profile.as_worker.approved_submission_count == 0
 
 
@@ -124,7 +124,7 @@ def test_requester_can_also_have_worker_stats(session: Session, users: dict[str,
     profile = user_service.build_public_profile(session, CLIENT_ID)
 
     assert profile.as_requester.completed_task_count == 1
-    assert profile.as_worker.trust_score == 3.0
+    assert profile.as_worker.trust_score == 60.0
     assert profile.as_worker.approved_submission_count == 3
 
 

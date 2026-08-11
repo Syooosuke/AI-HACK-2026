@@ -55,6 +55,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 - レスポンスに含める画像URLは **Supabase Storage の署名付きURL（有効期限1時間）** とする。
 - `raw_image_url`（原本）は**いかなるレスポンスにも含めない**。ワーカー本人にも返さない。
+- 例外はプロフィールのアイコン画像だけで、期限のない配信URLを返す（3.0.1 参照）。
 
 ---
 
@@ -69,6 +70,9 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | POST | `/api/auth/signup` | - | 新規登録（トークンを返す） |
 | POST | `/api/auth/login` | - | ログイン |
 | GET | `/api/auth/me` | 必須 | ログイン中ユーザーの取得・トークン検証 |
+| POST | `/api/users/me/avatar` | 必須 | 自分のアイコン画像を差し替える |
+| DELETE | `/api/users/me/avatar` | 必須 | 自分のアイコン画像を削除して既定へ戻す |
+| GET | `/api/users/{userId}/avatar` | - | アイコン画像の配信（`<img>` から直接読む） |
 | GET | `/api/users/{userId}/public` | 必須 | 公開プロフィール（閲覧用） |
 | POST | `/api/tasks` | 必須 | 依頼作成＋AI審査（同期） |
 | POST | `/api/tasks/{taskId}/resubmit` | 必須 | 補足情報を追記して再審査（オーナーのみ） |
@@ -139,6 +143,37 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 保持しているトークンの有効性確認と、ユーザー情報の最新化に使う。
 
 **レスポンス `200`**: `{ "user": { ...上と同じ } }`
+
+---
+
+### 3.0.1 アイコン画像 `/api/users/*/avatar`
+
+`avatarUrl` は**署名付きURLではなく** `/api/users/{userId}/avatar?v=<版>` を返す（1.4 の例外）。
+ログイン情報はブラウザの localStorage に残るため、有効期限付きURLだと次回起動時に
+画像だけ表示できなくなるからである。`v` は画像内容のハッシュで、
+差し替え時にブラウザのキャッシュを外すために付ける。
+
+#### `POST /api/users/me/avatar` — 差し替え
+
+**リクエスト**: `multipart/form-data`
+
+| フィールド | 型 | 必須 | 制約 |
+|---|---|---|---|
+| `image` | file | ✓ | `ALLOWED_IMAGE_TYPES` / `MAX_UPLOAD_SIZE_MB` は提出画像と共通 |
+
+- 中央を正方形に切り抜いて 256px のJPEGへ変換し、**加工済みバケット**へ保存する。
+- 差し替えると古い画像はストレージから削除する。
+- **レスポンス `200`**: `{ "user": { ...`GET /api/auth/me` と同じ } }`
+
+#### `DELETE /api/users/me/avatar` — 削除
+
+既定表示（表示名の頭文字を描いた丸）へ戻す。レスポンスは上と同じ形で `avatarUrl` が `null`。
+
+#### `GET /api/users/{userId}/avatar` — 配信（認証不要）
+
+`<img>` から読むため Authorization ヘッダーを付けられず、他ユーザーのアイコンも表示するため
+**認証不要**とする。返すのは本人がアップロードしたアイコンのみで、提出画像の原本は扱わない。
+未設定・不在ユーザーはどちらも `404 NOT_FOUND`。
 
 ---
 
@@ -350,7 +385,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 - `404 USER_NOT_FOUND`: 存在しないユーザー
 - `asRequester.completionRate` は母数0のとき `null`
-- `asWorker.trustScore` は5段階へ換算した値（`trust_score / 20`）
+- `asWorker.trustScore` は 0〜100 のまま返す（画面はゲージで表示する）
 - 実績が0の側も省略せず返す（表示側で空状態を出す）
 
 **公開してはならない項目**（実装は `app/services/user_service.py` に集約する）
@@ -493,13 +528,18 @@ client のみ。`ai_validation_status='approved'` の submission のみを返す
       "locationLabel": "渋谷区○○ 1-1-1付近",
       "realityScore": 92,
       "aiSummary": "工事は予定通り進行中。安全対策は適切に実施されています。",
-      "worker": { "displayName": "山田 太郎", "trustScore": 4.8, "avatarUrl": null }
+      "worker": {
+        "displayName": "山田 太郎",
+        "trustScore": 96.0,
+        "avatarUrl": "/api/users/<uuid>/avatar?v=1f2e3d4c5b6a7890"
+      }
     }
   ]
 }
 ```
 
-`worker.trustScore` は表示用に5段階へ換算する（`trust_score / 20`、小数第1位まで）。
+`worker.trustScore` は **0〜100 のまま**返す。画面はゲージ（最大値100）で表示するため、
+5段階への換算は行わない。`avatarUrl` は 3.0.1 の配信URL（未設定なら `null`）。
 
 ---
 

@@ -15,16 +15,11 @@ from app.models import User
 from app.repositories import user_repo
 from app.schemas.task import TaskOwner
 from app.schemas.user import (
-    TRUST_SCORE_TO_STARS_DIVISOR,
     PublicProfile,
     RequesterStats,
     WorkerStats,
 )
-
-
-def _stars(user: User) -> float:
-    """信頼度スコアを5段階へ換算する（docs/03-api.md 3.8 と同じ換算）。"""
-    return round(float(user.trust_score) / TRUST_SCORE_TO_STARS_DIVISOR, 1)
+from app.services import avatar_service
 
 
 def _completion_rate(published: int, completed: int) -> float | None:
@@ -53,7 +48,7 @@ def build_public_profile(session: Session, user_id: uuid.UUID) -> PublicProfile:
     return PublicProfile(
         id=user.id,
         display_name=user.display_name,
-        avatar_url=user.avatar_url,
+        avatar_url=avatar_service.public_url(user),
         joined_at=user.created_at,
         as_requester=RequesterStats(
             published_task_count=counts.published,
@@ -61,7 +56,8 @@ def build_public_profile(session: Session, user_id: uuid.UUID) -> PublicProfile:
             completion_rate=_completion_rate(counts.published, counts.completed),
         ),
         as_worker=WorkerStats(
-            trust_score=_stars(user),
+            # 0〜100 のまま返す。画面はゲージで表示する（PR #11 の方針）
+            trust_score=float(user.trust_score),
             approved_submission_count=user.completed_task_count,
         ),
     )
@@ -79,7 +75,7 @@ def build_task_owner(session: Session, owner: User) -> TaskOwner:
         display_name=owner.display_name,
         trust_score=float(owner.trust_score),
         completed_task_count=owner.completed_task_count,
-        avatar_url=owner.avatar_url,
+        avatar_url=avatar_service.public_url(owner),
         published_task_count=counts.published,
         completion_rate=_completion_rate(counts.published, counts.completed),
     )

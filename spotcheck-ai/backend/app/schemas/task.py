@@ -117,6 +117,7 @@ class TaskOwner(CamelModel):
 
     id: uuid.UUID
     display_name: str
+    #: 0〜100。画面ではゲージで表示する
     trust_score: float
     completed_task_count: int
     avatar_url: str | None = None

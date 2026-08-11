@@ -142,7 +142,7 @@ export type RequesterStats = {
 };
 
 export type WorkerStats = {
-  /** 5段階へ換算済み */
+  /** 0〜100。画面ではゲージで表示する。 */
   trustScore: number;
   approvedSubmissionCount: number;
 };
@@ -194,6 +194,7 @@ export type TaskOwner = {
   /** 公開プロフィール `/users/[id]` への導線に使う */
   id: string;
   displayName: string;
+  /** 0〜100。画面ではゲージで表示する。 */
   trustScore: number;
   completedTaskCount: number;
   avatarUrl: string | null;
@@ -312,6 +313,7 @@ export type TaskResultItem = {
   realityScore: number | null;
   aiSummary: string | null;
   locationCheck: LocationCheck | null;
+  /** `trustScore` は 0〜100。画面ではゲージで表示する。 */
   worker: { displayName: string; trustScore: number; avatarUrl: string | null };
 };
 

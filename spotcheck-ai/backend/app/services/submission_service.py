@@ -33,7 +33,8 @@ from app.schemas.submission import (
     TaskResultItem,
     TaskResultsResponse,
 )
-from app.schemas.user import TRUST_SCORE_TO_STARS_DIVISOR, WorkerSummary
+from app.schemas.user import WorkerSummary
+from app.services import avatar_service
 from app.services.exif import extract_exif
 from app.services.orca_client import get_orca_client
 from app.services.result_summary import generate_result_summary
@@ -239,8 +240,8 @@ async def get_task_results(
                 location_check=submission.location_check,
                 worker=WorkerSummary(
                     display_name=worker.display_name,
-                    trust_score=round(float(worker.trust_score) / TRUST_SCORE_TO_STARS_DIVISOR, 1),
-                    avatar_url=worker.avatar_url,
+                    trust_score=float(worker.trust_score),
+                    avatar_url=avatar_service.public_url(worker),
                 ),
             )
         )

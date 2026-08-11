@@ -1,6 +1,7 @@
-/** スコア数値＋チェック項目リスト（画面②⑦で共用）。 */
+/** スコアのゲージ＋チェック項目リスト（画面②⑦で共用）。 */
 
 import { CheckIcon } from "@/components/ui";
+import { TrustGauge } from "@/components/ui/TrustGauge";
 
 export type ScoreCheckItem = {
   label: string;
@@ -11,21 +12,19 @@ export type ScoreCheckItem = {
 export function ScorePanel({
   score,
   items,
-  accentClassName = "text-ai",
+  label = "スコア",
   caption,
 }: {
   score: number | null;
   items: ScoreCheckItem[];
-  accentClassName?: string;
+  /** 読み上げ用の見出し（何のスコアか）。 */
+  label?: string;
   caption?: string;
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-center gap-1">
-        <span className={`text-5xl font-bold tabular-nums ${accentClassName}`}>
-          {score ?? "–"}
-        </span>
-        <span className="pb-2 text-sm text-slate-400">/ 100</span>
+      <div className="flex justify-center">
+        <TrustGauge score={score} label={label} size="lg" />
       </div>
       {caption && <p className="text-center text-xs text-slate-500">{caption}</p>}
       <ul className="divide-y divide-slate-100">
