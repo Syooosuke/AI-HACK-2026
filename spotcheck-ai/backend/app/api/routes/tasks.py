@@ -9,10 +9,11 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.storage import get_storage
+from app.models import TaskStatus
 from app.schemas.submission import TaskResultsResponse
 from app.schemas.task import (
     AcceptTaskResponse,
@@ -24,7 +25,7 @@ from app.schemas.task import (
     TaskResubmitRequest,
     TaskReviewResponse,
 )
-from app.services import submission_service, task_service
+from app.services import submission_service, task_service, thumbnail_service
 from app.services.orca_client import get_orca_client
 from app.services.task_service import TaskCreateInput
 
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/api", tags=["tasks"])
 async def create_task(
     session: DbSession,
     client: CurrentUser,
+    background_tasks: BackgroundTasks,
     title: Annotated[str, Form(min_length=1, max_length=60)],
     description: Annotated[str, Form(min_length=10, max_length=1000)],
     location_lat: Annotated[float, Form(alias="locationLat", ge=-90, le=90)],
@@ -47,7 +49,7 @@ async def create_task(
     reference_images: Annotated[list[UploadFile] | None, File(alias="referenceImages")] = None,
 ) -> TaskReviewResponse:
     """依頼作成＋AI審査。審査は同期実行し、その結果をそのまま返す（画面①→②）。"""
-    return await task_service.create_task(
+    response = await task_service.create_task(
         session,
         client=client,
         data=TaskCreateInput(
@@ -65,6 +67,17 @@ async def create_task(
         storage=get_storage(),
         orca=get_orca_client(),
     )
+    # サムネイルは重い処理（ストリートビュー取得＋画像生成）なので背景で作る。
+    # 生成前でも一覧は表示でき、できあがった時点で画像が出るようになる。
+    session.commit()
+    _schedule_thumbnail(background_tasks, response)
+    return response
+
+
+def _schedule_thumbnail(background_tasks: BackgroundTasks, response: TaskReviewResponse) -> None:
+    """公開された依頼だけサムネイル生成を予約する（却下・情報補足待ちは作らない）。"""
+    if response.task.status is TaskStatus.OPEN:
+        background_tasks.add_task(thumbnail_service.generate_for_task, response.task.id)
 
 
 @router.get("/tasks", response_model=TaskListResponse)
@@ -120,11 +133,12 @@ async def get_task(
 async def resubmit_task(
     session: DbSession,
     client: CurrentUser,
+    background_tasks: BackgroundTasks,
     task_id: uuid.UUID,
     payload: TaskResubmitRequest,
 ) -> TaskReviewResponse:
     """補足情報を追記して再審査（画面②の needs_info からの再提出）。"""
-    return await task_service.resubmit_task(
+    response = await task_service.resubmit_task(
         session,
         client=client,
         task_id=task_id,
@@ -132,6 +146,9 @@ async def resubmit_task(
         orca=get_orca_client(),
         storage=get_storage(),
     )
+    session.commit()
+    _schedule_thumbnail(background_tasks, response)
+    return response
 
 
 @router.post(
