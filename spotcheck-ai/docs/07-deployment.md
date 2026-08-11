@@ -156,7 +156,33 @@ curl -s https://spotcheck-backend-xxxx.run.app/api/health | python3 -m json.tool
 
 ---
 
-## 6. 運用上の注意
+## 6. 費用と安全策（デモURLを共有する前に）
+
+URLを共有すると、アクセス数に応じて課金されうる。以下を実際に設定してある。
+
+| 対策 | 設定値 | コマンド |
+|---|---|---|
+| APIキーの分離 | ブラウザ用とサーバー用（Street View Static のみ）を別キーにする | `gcloud services api-keys create --api-target=service=street-view-image-backend.googleapis.com` |
+| リファラー制限 | 本番URLと `localhost:3000/*` のみ | `gcloud services api-keys update <UID> --allowed-referrers="..."` |
+| APIの絞り込み | Maps JS / Geocoding / Places (New) / Street View のみ | `--api-target=service=...` を複数指定 |
+| 1日あたりの上限 | Geocoding・Places・Street View 各1,000／日、Maps JS 3,000／日 | `gcloud quotas preferences create --quota-id=BillableDefaultPerDayPerProject --preferred-value=1000` |
+| 最大インスタンス数 | backend 3 / frontend 5 | `gcloud run services update <SERVICE> --max-instances=3` |
+| 予算アラート | $10 で 50% / 90% / 100% 通知 | `gcloud billing budgets create --budget-amount=10 --threshold-rule=percent=0.5` |
+
+**キーはブラウザに露出する**（`NEXT_PUBLIC_*` はJSに焼き込まれるため原理的に隠せない）。
+リファラー制限・APIの絞り込み・1日上限が防御線になる。
+
+> Places API の1日上限は `BillableDefaultPerDayPerProject` が存在しないため、
+> `AutocompletePlacesRequestPerDayPerProject` と `GetPlaceRequestPerDayPerProject` を個別に設定する。
+
+### サーバー用キーを分ける理由
+
+ブラウザ用キーにリファラー制限を掛けると、**リファラーを送らないサーバーからの呼び出しは拒否される**。
+分けずに運用すると、制限を入れた瞬間にサムネイル生成（Street View Static）が止まる。
+
+---
+
+## 7. 運用上の注意
 
 | 項目 | 内容 |
 |---|---|

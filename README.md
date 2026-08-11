@@ -124,11 +124,41 @@ sequenceDiagram
 
 | サービス | URL |
 |---|---|
-| フロントエンド | https://spotcheck-frontend-dathtekrwq-an.a.run.app |
+| フロントエンド | **https://spotcheck-frontend-dathtekrwq-an.a.run.app** |
 | バックエンド | https://spotcheck-backend-dathtekrwq-an.a.run.app |
 
+<img src="spotcheck-ai/docs/assets/demo-qr.png" alt="デモ環境のQRコード" width="220">
+
+スマホのカメラでこのQRコードを読み取ると、そのまま開けます。
+ログインは `yamada` / `spotcheck123`（他に `demo_company` `sato` `suzuki`）。
+
 HTTPSで配信されるため、**スマホからカメラと現在地取得も使えます**。
+自分の依頼は自分で受注できないため、依頼〜受注を通して見る場合は2アカウントを使ってください。
+
 デプロイ手順は `spotcheck-ai/docs/07-deployment.md` を参照。
+QRコードを作り直すときは `./backend/.venv/bin/python deploy/make_qr.py <URL>`。
+
+---
+
+## 費用が出ないようにしている設定
+
+デモURLを共有すると、アクセス数に応じて課金される可能性があります。以下を入れて上限を作っています。
+
+| 対策 | 内容 |
+|---|---|
+| **APIキーの分離** | ブラウザ用（リファラー制限あり）とサーバー用（Street View Static のみ）を別キーにした |
+| **リファラー制限** | ブラウザ用キーは `spotcheck-frontend-dathtekrwq-an.a.run.app/*` と `localhost:3000/*` のみ許可。キーを抜き取られても他サイトからは使えない |
+| **APIの絞り込み** | ブラウザ用キーは Maps JavaScript / Geocoding / Places (New) / Street View のみ。Routes・Weather 等は外した |
+| **1日あたりの上限** | Geocoding・Places・Street View Static を各1,000回／日、Maps JavaScript を3,000回／日に制限。超えると課金されず単にエラーになる |
+| **最大インスタンス数** | Cloud Run はバックエンド3・フロント5まで。大量アクセス時も費用が跳ねない |
+| **予算アラート** | 請求先アカウントに $10 の予算を作成し、50% / 90% / 100% でメール通知 |
+
+> **キーはブラウザに露出します**（`NEXT_PUBLIC_*` はJSに埋め込まれるため原理的に隠せません）。
+> だからこそリファラー制限とAPIの絞り込み、1日上限が防御線になります。
+> URLを共有する相手が増えるときは、上限値を見直してください。
+
+無料枠の目安は Cloud Run が月200万リクエスト、Maps はSKUごとに月1万回程度です。
+新規アカウントの $300 クレジット（90日）があれば、デモ規模で自己負担が出ることはほぼありません。
 
 ---
 
