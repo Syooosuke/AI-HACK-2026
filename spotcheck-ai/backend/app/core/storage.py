@@ -67,6 +67,10 @@ class StorageBackend(ABC):
         """保存済みオブジェクトを取得する（検品・マスキング処理で使う）。"""
 
     @abstractmethod
+    async def delete(self, *, bucket: str, key: str) -> None:
+        """保存済みオブジェクトを削除する。存在しない場合も成功として扱う。"""
+
+    @abstractmethod
     async def create_signed_url(
         self, *, bucket: str, key: str, expires_in: int = DEFAULT_SIGNED_URL_TTL_SECONDS
     ) -> str:
@@ -148,6 +152,14 @@ class SupabaseStorageBackend(StorageBackend):
             )
         return response.content
 
+    async def delete(self, *, bucket: str, key: str) -> None:
+        response = await self._client.delete(f"/object/{bucket}/{key}")
+        if response.status_code >= 300 and not _is_object_not_found(response):
+            raise StorageError(
+                "画像の削除に失敗しました。",
+                details={"status": response.status_code, "body": response.text[:500]},
+            )
+
     async def create_signed_url(
         self, *, bucket: str, key: str, expires_in: int = DEFAULT_SIGNED_URL_TTL_SECONDS
     ) -> str:
@@ -202,6 +214,9 @@ class LocalStorageBackend(StorageBackend):
         if not path.exists():
             raise StorageObjectNotFound(details={"bucket": bucket, "key": key})
         return path.read_bytes()
+
+    async def delete(self, *, bucket: str, key: str) -> None:
+        self._path(bucket, key).unlink(missing_ok=True)
 
     async def create_signed_url(
         self, *, bucket: str, key: str, expires_in: int = DEFAULT_SIGNED_URL_TTL_SECONDS

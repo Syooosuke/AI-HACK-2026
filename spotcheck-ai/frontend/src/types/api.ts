@@ -170,8 +170,10 @@ export type TaskDetail = {
 /** 依頼主（投稿者）。 */
 export type TaskOwner = {
   displayName: string;
+  /** 0〜100。画面ではゲージで表示する。 */
   trustScore: number;
   completedTaskCount: number;
+  avatarUrl: string | null;
 };
 
 /** 投稿一覧（ホーム・さがす・ハート欄）に並べる1件分。 */
@@ -284,6 +286,7 @@ export type TaskResultItem = {
   realityScore: number | null;
   aiSummary: string | null;
   locationCheck: LocationCheck | null;
+  /** `trustScore` は 0〜100。画面ではゲージで表示する。 */
   worker: { displayName: string; trustScore: number; avatarUrl: string | null };
 };
 
