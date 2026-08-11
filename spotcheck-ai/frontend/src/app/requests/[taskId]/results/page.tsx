@@ -54,7 +54,7 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-800">調査結果</h1>
         <StatusBadge status={data.status} />

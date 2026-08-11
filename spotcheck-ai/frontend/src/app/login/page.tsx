@@ -48,7 +48,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="space-y-6 pt-10">
+    <div className="space-y-6 pt-10 md:pt-0">
       <header className="text-center">
         <h1 className="text-2xl font-bold text-slate-800">SpotCheck AI</h1>
         <p className="mt-1 text-xs text-slate-500">現地の「いま」をAIが検品して届ける</p>

@@ -96,7 +96,7 @@ export default function SubmissionStatusPage() {
   const errored = data.aiValidationStatus === "error";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-bold text-ai">AI画像検品・安全処理</p>

@@ -73,7 +73,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="space-y-6 pt-10">
+    <div className="space-y-6 pt-10 md:pt-0">
       <header className="text-center">
         <h1 className="text-2xl font-bold text-slate-800">新規登録</h1>
         <p className="mt-1 text-xs text-slate-500">

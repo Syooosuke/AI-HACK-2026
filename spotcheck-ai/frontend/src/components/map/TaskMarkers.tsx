@@ -79,7 +79,7 @@ export function TaskMarkers({
 
   if (status !== "ready") {
     return (
-      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl bg-slate-100 px-6 text-center text-sm text-slate-500">
+      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl bg-slate-100 px-6 text-center text-sm text-slate-500 md:h-96">
         {status === "loading" ? (
           "地図を読み込んでいます…"
         ) : (
@@ -96,5 +96,5 @@ export function TaskMarkers({
     );
   }
 
-  return <div ref={containerRef} className="h-72 w-full overflow-hidden rounded-2xl bg-slate-200" />;
+  return <div ref={containerRef} className="h-72 w-full overflow-hidden rounded-2xl bg-slate-200 md:h-96" />;
 }

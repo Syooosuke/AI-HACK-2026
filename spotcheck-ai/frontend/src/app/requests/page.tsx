@@ -32,7 +32,7 @@ export default function MyRequestsPage() {
   }, [load]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:mx-auto md:max-w-2xl">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-800">出した依頼</h1>
         <Link

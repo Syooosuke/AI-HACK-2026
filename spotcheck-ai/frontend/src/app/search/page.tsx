@@ -9,7 +9,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
+import {
+  PlaceSearchBox,
+  type SearchedPlace,
+} from "@/components/map/PlaceSearchBox";
 import { TaskMarkers } from "@/components/map/TaskMarkers";
 import { TaskCard } from "@/components/task/TaskCard";
 import { Card, EmptyState, Skeleton } from "@/components/ui";
@@ -28,7 +31,9 @@ const RADIUS_OPTIONS = [1, 3, 5, 10, 30];
 
 function parseNumber(value: string | null, fallback: number): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && value !== null && value !== "" ? parsed : fallback;
+  return Number.isFinite(parsed) && value !== null && value !== ""
+    ? parsed
+    : fallback;
 }
 
 export default function SearchPage() {
@@ -40,8 +45,12 @@ export default function SearchPage() {
     lat: parseNumber(params.get("lat"), env.defaultMapCenter.lat),
     lng: parseNumber(params.get("lng"), env.defaultMapCenter.lng),
   });
-  const [radiusKm, setRadiusKm] = useState(parseNumber(params.get("radiusKm"), 5));
-  const [sort, setSort] = useState<SortKey>((params.get("sort") as SortKey | null) ?? "distance");
+  const [radiusKm, setRadiusKm] = useState(
+    parseNumber(params.get("radiusKm"), 5),
+  );
+  const [sort, setSort] = useState<SortKey>(
+    (params.get("sort") as SortKey | null) ?? "distance",
+  );
   const [address, setAddress] = useState<string | null>(null);
   const [tasks, setTasks] = useState<NearbyTask[] | null>(null);
   const [selected, setSelected] = useState<NearbyTask | null>(null);
@@ -49,7 +58,11 @@ export default function SearchPage() {
 
   const load = useCallback(async () => {
     try {
-      const { tasks: fetched } = await listNearbyTasks({ ...center, radiusKm, sort });
+      const { tasks: fetched } = await listNearbyTasks({
+        ...center,
+        radiusKm,
+        sort,
+      });
       setTasks(fetched);
       setSelected(null);
     } catch (cause) {
@@ -133,41 +146,60 @@ export default function SearchPage() {
         </button>
       </div>
 
-      <TaskMarkers center={center} tasks={tasks ?? []} onSelect={setSelected} />
+      {/* PCでは地図と一覧を横並びにし、地図を追従させる */}
+      <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
+        <div className="space-y-3 lg:sticky lg:top-20">
+          <TaskMarkers
+            center={center}
+            tasks={tasks ?? []}
+            onSelect={setSelected}
+          />
 
-      {selected && (
-        <Card className="space-y-2 border-worker">
-          <p className="text-sm font-bold text-slate-800">{selected.title}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span>💰 ¥{selected.rewardAmount.toLocaleString()}</span>
-            {selected.distanceKm != null && <span>📍 {formatDistance(selected.distanceKm)}</span>}
-            <span>⏳ {formatRemaining(selected.deadlineAt)}</span>
-          </div>
-          <Link
-            href={`/jobs/${selected.id}`}
-            className="block rounded-lg bg-worker py-2.5 text-center text-xs font-bold text-white"
-          >
-            詳細を見る
-          </Link>
-        </Card>
-      )}
+          {selected && (
+            <Card className="space-y-2 border-worker">
+              <p className="text-sm font-bold text-slate-800">
+                {selected.title}
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                <span>💰 ¥{selected.rewardAmount.toLocaleString()}</span>
+                {selected.distanceKm != null && (
+                  <span>📍 {formatDistance(selected.distanceKm)}</span>
+                )}
+                <span>⏳ {formatRemaining(selected.deadlineAt)}</span>
+              </div>
+              <Link
+                href={`/jobs/${selected.id}`}
+                className="block rounded-lg bg-worker py-2.5 text-center text-xs font-bold text-white"
+              >
+                詳細を見る
+              </Link>
+            </Card>
+          )}
+        </div>
 
-      <div className="space-y-3">
-        <p className="text-xs text-slate-500">この範囲の依頼 {tasks?.length ?? 0}件</p>
-        {tasks === null && (
-          <div className="grid grid-cols-2 gap-3">
-            <Skeleton className="aspect-square" />
-            <Skeleton className="aspect-square" />
-          </div>
-        )}
-        {tasks?.length === 0 && (
-          <EmptyState message="この範囲に募集中の依頼がありません。範囲を広げるか、別の地点で検索してください。" />
-        )}
-        <ul className="grid grid-cols-2 gap-3">
-          {tasks?.map((task) => (
-            <TaskCard key={task.id} task={task} onError={(message) => toast.error(message)} />
-          ))}
-        </ul>
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500">
+            この範囲の依頼 {tasks?.length ?? 0}件
+          </p>
+          {tasks === null && (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-2">
+              <Skeleton className="aspect-square" />
+              <Skeleton className="aspect-square" />
+            </div>
+          )}
+          {tasks?.length === 0 && (
+            <EmptyState message="この範囲に募集中の依頼がありません。範囲を広げるか、別の地点で検索してください。" />
+          )}
+          <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-2">
+            {tasks?.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onError={(message) => toast.error(message)}
+              />
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );

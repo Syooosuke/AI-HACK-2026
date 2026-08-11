@@ -81,7 +81,7 @@ export function LocationPicker({
     return (
       <div className="space-y-2">
         <PlaceSearchBox onSelect={applySearch} />
-        <div ref={containerRef} className="h-56 w-full overflow-hidden rounded-xl bg-slate-200" />
+        <div ref={containerRef} className="h-56 w-full overflow-hidden rounded-xl bg-slate-200 md:h-72" />
         <p className="text-xs text-slate-500">
           検索するか、地図をタップしてピンを移動できます — {formatCoords(value.lat, value.lng)}
         </p>
@@ -93,7 +93,7 @@ export function LocationPicker({
   return (
     <div className="space-y-3">
       {status === "loading" ? (
-        <div className="flex h-56 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-500">
+        <div className="flex h-56 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-500 md:h-72">
           地図を読み込んでいます…
         </div>
       ) : (

@@ -62,7 +62,9 @@ export default function WorkerTaskDetailPage() {
     if (!task || likePending) return;
     setLikePending(true);
     try {
-      const result = task.isLiked ? await unlikeTask(task.id) : await likeTask(task.id);
+      const result = task.isLiked
+        ? await unlikeTask(task.id)
+        : await likeTask(task.id);
       setTask({ ...task, isLiked: result.liked, likeCount: result.likeCount });
     } catch (cause) {
       toast.error(toMessage(cause));
@@ -86,9 +88,10 @@ export default function WorkerTaskDetailPage() {
   const isFull = task.remainingSlots <= 0 && !mine;
 
   return (
-    <div className="space-y-5">
+    /* PCでは画像を左に固定し、右側で内容を読ませる */
+    <div className="space-y-5 lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-8 lg:space-y-0">
       {task.thumbnailUrl && (
-        <div className="relative overflow-hidden rounded-2xl bg-slate-100">
+        <div className="relative overflow-hidden rounded-2xl bg-slate-100 lg:sticky lg:top-20">
           {/* eslint-disable-next-line @next/next/no-img-element -- 署名付きURLのため最適化は使わない */}
           <img
             src={resolveApiUrl(task.thumbnailUrl)}
@@ -99,127 +102,158 @@ export default function WorkerTaskDetailPage() {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3">
-        <h1 className="text-lg font-bold leading-snug text-slate-800">{task.title}</h1>
-        <div className="flex shrink-0 items-center gap-2">
-          {mine && <AssignmentBadge status={mine.status} />}
-          {!task.isMine && (
-            <button
-              type="button"
-              onClick={() => void toggleLike()}
-              disabled={likePending}
-              aria-label={task.isLiked ? "いいねを取り消す" : "いいねする"}
-              aria-pressed={task.isLiked}
-              className="flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 disabled:opacity-60"
-            >
-              <span aria-hidden className={task.isLiked ? "text-fail" : "text-slate-300"}>
-                {task.isLiked ? "♥" : "♡"}
-              </span>
-              {task.likeCount}
-            </button>
-          )}
+      <div className="space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-lg font-bold leading-snug text-slate-800">
+            {task.title}
+          </h1>
+          <div className="flex shrink-0 items-center gap-2">
+            {mine && <AssignmentBadge status={mine.status} />}
+            {!task.isMine && (
+              <button
+                type="button"
+                onClick={() => void toggleLike()}
+                disabled={likePending}
+                aria-label={task.isLiked ? "いいねを取り消す" : "いいねする"}
+                aria-pressed={task.isLiked}
+                className="flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 disabled:opacity-60"
+              >
+                <span
+                  aria-hidden
+                  className={task.isLiked ? "text-fail" : "text-slate-300"}
+                >
+                  {task.isLiked ? "♥" : "♡"}
+                </span>
+                {task.likeCount}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <Card>
-        <SectionTitle>撮影条件</SectionTitle>
-        {task.reviewSummary && (
-          <p className="mb-2 rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-900">
-            {task.reviewSummary}
-          </p>
-        )}
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-          {task.description}
-        </p>
-      </Card>
-
-      {task.referenceImages.length > 0 && (
         <Card>
-          <SectionTitle>参考画像</SectionTitle>
-          <p className="mb-2 text-xs text-slate-500">
-            依頼者が期待するイメージ（{task.referenceImages.length}枚）
+          <SectionTitle>撮影条件</SectionTitle>
+          {task.reviewSummary && (
+            <p className="mb-2 rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-900">
+              {task.reviewSummary}
+            </p>
+          )}
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+            {task.description}
           </p>
-          <ul className="grid grid-cols-3 gap-2">
-            {task.referenceImages.map((image) => (
-              <li key={image.id} className="overflow-hidden rounded-xl bg-slate-100">
-                {/* eslint-disable-next-line @next/next/no-img-element -- 署名付きURLのため最適化は使わない */}
-                <img
-                  src={resolveApiUrl(image.imageUrl)}
-                  alt="参考画像"
-                  className="aspect-square w-full object-cover"
-                  loading="lazy"
-                />
-              </li>
-            ))}
-          </ul>
         </Card>
-      )}
 
-      <Card>
-        <InfoRow
-          label="現地までの距離"
-          value={
-            task.distanceKm == null ? "現在地不明" : formatDistanceWithWalk(task.distanceKm)
-          }
-          icon={<span>🚶</span>}
-        />
-        <InfoRow
-          label="撮影地点"
-          value={task.locationAddress ?? formatCoords(task.locationLat, task.locationLng)}
-          icon={<span>📍</span>}
-        />
-        <InfoRow label="撮影希望日時" value={formatDateTime(task.scheduledAt)} icon={<span>🕒</span>} />
-        <InfoRow
-          label="提出期限"
-          value={`${formatDateTime(task.deadlineAt)}（${formatRemaining(task.deadlineAt)}）`}
-          icon={<span>⏳</span>}
-        />
-        <InfoRow
-          label="報酬"
-          value={`¥${task.rewardAmount.toLocaleString()}`}
-          icon={<span>💰</span>}
-        />
-        <InfoRow label="残り枠" value={`${task.remainingSlots}枠`} icon={<span>👥</span>} />
-        {task.owner && (
-          <InfoRow
-            label="依頼主"
-            value={`${task.owner.displayName}（信頼度 ${task.owner.trustScore.toFixed(1)}）`}
-            icon={<span>🧑‍💼</span>}
-          />
+        {task.referenceImages.length > 0 && (
+          <Card>
+            <SectionTitle>参考画像</SectionTitle>
+            <p className="mb-2 text-xs text-slate-500">
+              依頼者が期待するイメージ（{task.referenceImages.length}枚）
+            </p>
+            <ul className="grid grid-cols-3 gap-2">
+              {task.referenceImages.map((image) => (
+                <li
+                  key={image.id}
+                  className="overflow-hidden rounded-xl bg-slate-100"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- 署名付きURLのため最適化は使わない */}
+                  <img
+                    src={resolveApiUrl(image.imageUrl)}
+                    alt="参考画像"
+                    className="aspect-square w-full object-cover"
+                    loading="lazy"
+                  />
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
-        <InfoRow
-          label="閲覧・いいね"
-          value={`${task.viewCount}回 / ${task.likeCount}件`}
-          icon={<span>👀</span>}
-        />
-      </Card>
-      <p className="text-center text-[10px] text-slate-400">
-        所要時間は徒歩80m/分で概算した目安です
-      </p>
 
-      {canCapture ? (
-        <Button accent="worker" onClick={() => router.push(`/jobs/${taskId}/capture`)}>
-          撮影に進む
-        </Button>
-      ) : mine ? (
-        <Button
-          accent="neutral"
-          onClick={() =>
-            router.push(
-              mine.latestSubmissionId
-                ? `/jobs/${taskId}/status?submissionId=${mine.latestSubmissionId}`
-                : `/jobs/${taskId}`,
-            )
-          }
-          disabled={!mine.latestSubmissionId}
-        >
-          検品結果を見る
-        </Button>
-      ) : (
-        <Button accent="worker" onClick={() => void accept()} loading={accepting} disabled={isFull}>
-          {isFull ? "受注枠が埋まっています" : "この依頼を受ける"}
-        </Button>
-      )}
+        <Card>
+          <InfoRow
+            label="現地までの距離"
+            value={
+              task.distanceKm == null
+                ? "現在地不明"
+                : formatDistanceWithWalk(task.distanceKm)
+            }
+            icon={<span>🚶</span>}
+          />
+          <InfoRow
+            label="撮影地点"
+            value={
+              task.locationAddress ??
+              formatCoords(task.locationLat, task.locationLng)
+            }
+            icon={<span>📍</span>}
+          />
+          <InfoRow
+            label="撮影希望日時"
+            value={formatDateTime(task.scheduledAt)}
+            icon={<span>🕒</span>}
+          />
+          <InfoRow
+            label="提出期限"
+            value={`${formatDateTime(task.deadlineAt)}（${formatRemaining(task.deadlineAt)}）`}
+            icon={<span>⏳</span>}
+          />
+          <InfoRow
+            label="報酬"
+            value={`¥${task.rewardAmount.toLocaleString()}`}
+            icon={<span>💰</span>}
+          />
+          <InfoRow
+            label="残り枠"
+            value={`${task.remainingSlots}枠`}
+            icon={<span>👥</span>}
+          />
+          {task.owner && (
+            <InfoRow
+              label="依頼主"
+              value={`${task.owner.displayName}（信頼度 ${task.owner.trustScore.toFixed(1)}）`}
+              icon={<span>🧑‍💼</span>}
+            />
+          )}
+          <InfoRow
+            label="閲覧・いいね"
+            value={`${task.viewCount}回 / ${task.likeCount}件`}
+            icon={<span>👀</span>}
+          />
+        </Card>
+        <p className="text-center text-[10px] text-slate-400">
+          所要時間は徒歩80m/分で概算した目安です
+        </p>
+
+        {canCapture ? (
+          <Button
+            accent="worker"
+            onClick={() => router.push(`/jobs/${taskId}/capture`)}
+          >
+            撮影に進む
+          </Button>
+        ) : mine ? (
+          <Button
+            accent="neutral"
+            onClick={() =>
+              router.push(
+                mine.latestSubmissionId
+                  ? `/jobs/${taskId}/status?submissionId=${mine.latestSubmissionId}`
+                  : `/jobs/${taskId}`,
+              )
+            }
+            disabled={!mine.latestSubmissionId}
+          >
+            検品結果を見る
+          </Button>
+        ) : (
+          <Button
+            accent="worker"
+            onClick={() => void accept()}
+            loading={accepting}
+            disabled={isFull}
+          >
+            {isFull ? "受注枠が埋まっています" : "この依頼を受ける"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -231,7 +265,10 @@ function currentPosition(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (position) =>
-        resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }),
       () => resolve(null),
       { timeout: 5000 },
     );

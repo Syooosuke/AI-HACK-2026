@@ -33,7 +33,7 @@ export default function MyPage() {
   if (user === undefined) return <Skeleton className="h-32" />;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:mx-auto md:max-w-2xl">
       <h1 className="text-lg font-bold text-slate-800">マイページ</h1>
 
       <Card>

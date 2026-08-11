@@ -91,7 +91,7 @@ export default function NewTaskPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <h1 className="text-lg font-bold text-slate-800">依頼を作成</h1>
 
       <Card className="space-y-3">

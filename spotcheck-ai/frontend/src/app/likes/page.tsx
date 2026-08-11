@@ -65,14 +65,14 @@ export default function LikesPage() {
       <section className="space-y-3">
         <SectionTitle>いいねした投稿</SectionTitle>
         {tasks === null ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-4">
             <Skeleton className="aspect-square" />
             <Skeleton className="aspect-square" />
           </div>
         ) : tasks.length === 0 ? (
           <EmptyState message="いいねした投稿はまだありません。ホームで気になる依頼のハートをタップすると、ここに集まります。" />
         ) : (
-          <ul className="grid grid-cols-2 gap-3">
+          <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-4">
             {tasks.map((task) => (
               <TaskCard
                 key={task.id}

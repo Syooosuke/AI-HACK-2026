@@ -138,7 +138,7 @@ export default function HomePage() {
       </div>
 
       {tasks === null ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-4">
           <Skeleton className="aspect-square" />
           <Skeleton className="aspect-square" />
         </div>
@@ -147,7 +147,7 @@ export default function HomePage() {
       ) : (
         <>
           <p className="text-xs text-slate-500">{tasks.length}件</p>
-          <ul className="grid grid-cols-2 gap-3">
+          <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-4">
             {tasks.map((task) => (
               <TaskCard key={task.id} task={task} onError={(message) => toast.error(message)} />
             ))}

@@ -77,7 +77,7 @@ export default function ReviewPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <header>
         <p className="text-xs font-bold text-ai">AIリクエスト審査（OrcaAI）</p>
         <h1 className="text-lg font-bold text-slate-800">{task.title}</h1>

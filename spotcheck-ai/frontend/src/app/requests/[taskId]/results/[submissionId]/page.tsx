@@ -52,7 +52,7 @@ export default function ResultDetailPage() {
   const stars = "★".repeat(Math.round(result.worker.trustScore)).padEnd(5, "☆");
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <h1 className="text-lg font-bold text-slate-800">調査レポート</h1>
 
       {task && (

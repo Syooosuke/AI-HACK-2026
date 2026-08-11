@@ -57,7 +57,7 @@ export default function TaskProgressPage() {
   const hasResults = task.approvedWorkerCount > 0 || task.status === "completed";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-bold leading-snug text-slate-800">{task.title}</h1>
         <StatusBadge status={task.status} />
