@@ -67,6 +67,7 @@ python3 -m venv .venv
 cp .env.example .env             # そのままでOK。値は埋めなくても起動する
 ./.venv/bin/alembic upgrade head
 ./.venv/bin/python -m scripts.seed_demo_users
+./.venv/bin/python -m scripts.seed_demo_tasks   # 一覧確認用の投稿（任意）
 ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
@@ -110,6 +111,16 @@ curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
 （ただし自分が出した依頼は自分で受注できません。動作確認には2アカウント使ってください）。
 
 パスワードを変えたい場合は `DEMO_USER_PASSWORD=好きなパスワード ./.venv/bin/python -m scripts.seed_demo_users`。
+
+### 一覧を賑やかす（任意）
+
+```bash
+cd backend
+./.venv/bin/python -m scripts.seed_demo_tasks        # 募集中の投稿5件（SOLD / HOT / NEW が1つずつ出る）
+./.venv/bin/python -m scripts.regenerate_thumbnails --force  # サムネイルの作り直し
+```
+
+いずれも固定UUIDなので、何度実行しても同じ投稿になります。
 
 ---
 
