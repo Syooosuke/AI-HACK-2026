@@ -13,13 +13,14 @@ from app.models.enums import (
     PaymentDirection,
     PaymentStatus,
     TaskStatus,
-    UserRole,
     ValidationStatus,
 )
 from app.models.payment import Payment
+from app.models.saved_search import SavedSearch
 from app.models.submission import Submission
 from app.models.task import Task, TaskReferenceImage
 from app.models.task_assignment import TaskAssignment
+from app.models.task_like import TaskLike
 from app.models.user import User
 
 __all__ = [
@@ -31,12 +32,13 @@ __all__ = [
     "Payment",
     "PaymentDirection",
     "PaymentStatus",
+    "SavedSearch",
     "Submission",
     "Task",
     "TaskAssignment",
+    "TaskLike",
     "TaskReferenceImage",
     "TaskStatus",
     "User",
-    "UserRole",
     "ValidationStatus",
 ]

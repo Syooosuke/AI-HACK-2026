@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFound
 from app.models import User
 from app.repositories import user_repo
+from app.schemas.task import TaskOwner
 from app.schemas.user import (
     TRUST_SCORE_TO_STARS_DIVISOR,
     PublicProfile,
     RequesterStats,
-    RequesterSummary,
     WorkerStats,
 )
 
@@ -67,14 +67,19 @@ def build_public_profile(session: Session, user_id: uuid.UUID) -> PublicProfile:
     )
 
 
-def build_requester_summary(session: Session, user_id: uuid.UUID) -> RequesterSummary:
-    """画面⑤の依頼者行に出す要約。プロフィールへ遷移せずに判断できる最小限だけ返す。"""
-    user = _require_user(session, user_id)
-    counts = user_repo.requester_counts(session, user_id)
-    return RequesterSummary(
-        id=user.id,
-        display_name=user.display_name,
-        avatar_url=user.avatar_url,
+def build_task_owner(session: Session, owner: User) -> TaskOwner:
+    """依頼詳細に載せる依頼主。プロフィールへ遷移せずに判断できる最小限も添える。
+
+    `TaskOwner` は依頼詳細（docs/03-api.md 3.4）で既に使われているため、
+    公開プロフィールへの導線は**新しいフィールドを増やさずここを拡張して**実現する。
+    """
+    counts = user_repo.requester_counts(session, owner.id)
+    return TaskOwner(
+        id=owner.id,
+        display_name=owner.display_name,
+        trust_score=float(owner.trust_score),
+        completed_task_count=owner.completed_task_count,
+        avatar_url=owner.avatar_url,
         published_task_count=counts.published,
         completion_rate=_completion_rate(counts.published, counts.completed),
     )

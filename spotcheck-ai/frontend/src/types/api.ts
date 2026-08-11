@@ -3,8 +3,6 @@
  * JSONキーは camelCase。
  */
 
-export type UserRole = "client" | "worker";
-
 export type TaskStatus =
   | "screening"
   | "rejected"
@@ -48,13 +46,22 @@ export type HealthResponse = {
   configWarnings: string[];
 };
 
-export type DemoUser = {
+/** ログイン中のユーザー（`GET /api/auth/me` / ログイン応答）。 */
+export type AuthUser = {
   id: string;
-  role: UserRole;
+  loginId: string;
   displayName: string;
   trustScore: number;
   completedTaskCount: number;
   avatarUrl: string | null;
+};
+
+export type AuthResponse = {
+  token: string;
+  tokenType: string;
+  /** トークンの有効期間（秒）。 */
+  expiresIn: number;
+  user: AuthUser;
 };
 
 export type ReviewChecks = {
@@ -128,16 +135,6 @@ export type ReferenceImage = {
   sortOrder: number;
 };
 
-/** 画面⑤の依頼者行に出す要約（docs/03-api.md 3.4）。 */
-export type RequesterSummary = {
-  id: string;
-  displayName: string;
-  avatarUrl: string | null;
-  publishedTaskCount: number;
-  /** 母数0のときは null */
-  completionRate: number | null;
-};
-
 export type RequesterStats = {
   publishedTaskCount: number;
   completedTaskCount: number;
@@ -160,6 +157,9 @@ export type PublicProfile = {
   asWorker: WorkerStats;
 };
 
+/** 投稿カードの左上に出すタグ。 */
+export type TaskBadge = "sold" | "new" | "hot";
+
 export type TaskDetail = {
   id: string;
   title: string;
@@ -176,23 +176,74 @@ export type TaskDetail = {
   status: TaskStatus;
   reviewSummary: string | null;
   referenceImages: ReferenceImage[];
-  requester: RequesterSummary | null;
+  createdAt: string;
+  owner: TaskOwner | null;
+  thumbnailUrl: string | null;
+  badges: TaskBadge[];
+  likeCount: number;
+  isLiked: boolean;
+  viewCount: number;
+  isMine: boolean;
   timeline: TimelineStep[] | null;
   distanceKm: number | null;
   myAssignment: MyAssignment | null;
 };
 
+/** 依頼主（投稿者）。 */
+export type TaskOwner = {
+  /** 公開プロフィール `/users/[id]` への導線に使う */
+  id: string;
+  displayName: string;
+  trustScore: number;
+  completedTaskCount: number;
+  avatarUrl: string | null;
+  publishedTaskCount: number;
+  /** 母数0のときは null */
+  completionRate: number | null;
+};
+
+/** 投稿一覧（ホーム・さがす・ハート欄）に並べる1件分。 */
 export type NearbyTask = {
   id: string;
   title: string;
   rewardAmount: number;
-  distanceKm: number;
+  /** 中心座標が分かる場合のみ入る（ハート欄では null）。 */
+  distanceKm: number | null;
   scheduledAt: string;
   deadlineAt: string;
   locationLat: number;
   locationLng: number;
+  locationAddress: string | null;
   remainingSlots: number;
   requiredWorkerCount: number;
+  status: TaskStatus;
+  createdAt: string;
+  thumbnailUrl: string | null;
+  thumbnailSource: string | null;
+  badges: TaskBadge[];
+  likeCount: number;
+  isLiked: boolean;
+  viewCount: number;
+  isMine: boolean;
+};
+
+export type LikeResult = {
+  taskId: string;
+  liked: boolean;
+  likeCount: number;
+};
+
+/** 保存した検索条件（ハート欄の下半分）。 */
+export type SavedSearch = {
+  id: string;
+  label: string;
+  centerLat: number;
+  centerLng: number;
+  locationAddress: string | null;
+  radiusKm: number;
+  sort: "distance" | "reward" | "deadline";
+  lastMatchCount: number | null;
+  createdAt: string;
 };
 
 export type AssignmentDetail = {

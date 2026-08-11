@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, EmptyState, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { getPublicProfile } from "@/lib/api/users";
+import { getPublicProfile } from "@/lib/api/profile";
 import type { PublicProfile } from "@/types/api";
 
 const JOINED_FORMAT = new Intl.DateTimeFormat("ja-JP", {

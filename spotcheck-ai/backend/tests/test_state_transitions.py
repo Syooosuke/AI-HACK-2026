@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_session_factory
 from app.core.exceptions import AppError, Conflict
+from app.core.storage import get_storage
 from app.models import AssignmentStatus, Submission, TaskStatus, User, ValidationStatus
 from app.repositories import assignment_repo, submission_repo
 from app.services import masking, submission_pipeline, task_service
@@ -220,11 +221,18 @@ def test_expired_task_is_not_reopened(session: Session, users: dict[str, User]) 
     assert task.status is TaskStatus.IN_PROGRESS
 
 
-def test_expired_task_is_hidden_from_nearby(session: Session, users: dict[str, User]) -> None:
+async def test_expired_task_is_hidden_from_nearby(session: Session, users: dict[str, User]) -> None:
     """期限切れの依頼は近傍検索に出てこない。"""
     make_task(session, client=users["client"], deadline_offset_hours=-1)
-    found = task_service.find_nearby(
-        session, lat=35.6595, lng=139.7005, radius_km=5, limit=50, sort="distance"
+    found = await task_service.find_nearby(
+        session,
+        viewer=users["worker"],
+        storage=get_storage(),
+        lat=35.6595,
+        lng=139.7005,
+        radius_km=5,
+        limit=50,
+        sort="distance",
     )
     assert found == []
 

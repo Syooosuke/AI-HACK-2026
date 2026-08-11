@@ -19,10 +19,9 @@ from app.models import (
     Task,
     TaskStatus,
     User,
-    UserRole,
 )
 from app.models.task import MAX_REFERENCE_IMAGES
-from app.repositories import assignment_repo, submission_repo, task_repo
+from app.repositories import assignment_repo, like_repo, submission_repo, task_repo, user_repo
 from app.schemas.task import (
     AssignmentDetail,
     MyAssignment,
@@ -36,7 +35,7 @@ from app.schemas.task import (
     TaskSummary,
     TimelineStep,
 )
-from app.services import task_review, user_service
+from app.services import task_card, task_review, user_service
 from app.services.orca_client import OrcaClient
 from app.services.uploads import extension_for, read_and_validate_image
 
@@ -154,24 +153,28 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
     if task is None:
         raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
 
-    # 2. 期限・状態の確認
+    # 2. 自分が出した依頼は受注できない（1アカウントで両方の役割を持つため明示的に弾く）
+    if task.client_id == worker.id:
+        raise Forbidden("自分が作成した依頼は受注できません。", code="CANNOT_ACCEPT_OWN_TASK")
+
+    # 3. 期限・状態の確認
     if task.status not in (TaskStatus.OPEN, TaskStatus.IN_PROGRESS):
         raise Conflict("この依頼は現在受注できません。", code="INVALID_STATE")
     if task.deadline_at <= datetime.now(UTC):
         raise Conflict("この依頼は期限を過ぎています。", code="INVALID_STATE")
 
-    # 3. 同一ワーカーの重複受注
+    # 4. 同一ワーカーの重複受注
     existing = assignment_repo.get_by_task_and_worker(session, task_id=task_id, worker_id=worker.id)
     if existing is not None:
         if existing.status in (AssignmentStatus.ACCEPTED, AssignmentStatus.SUBMITTED):
             raise Conflict("すでにこの依頼を受注しています。", code="ALREADY_ACCEPTED")
         raise Conflict("この依頼はすでに完了または失格となっています。", code="ALREADY_ACCEPTED")
 
-    # 4. 空き枠の確認
+    # 5. 空き枠の確認
     if assignment_repo.count_active(session, task_id) >= task.required_worker_count:
         raise Conflict("受注枠がすでに埋まっています。", code="TASK_FULL")
 
-    # 5. 受注を作成し、依頼を進行中にする
+    # 6. 受注を作成し、依頼を進行中にする
     assignment = assignment_repo.create(session, task_id=task_id, worker_id=worker.id)
     task.status = TaskStatus.IN_PROGRESS
     session.flush()
@@ -234,15 +237,20 @@ def list_client_tasks(session: Session, client: User) -> list[TaskListItem]:
     ]
 
 
-def find_nearby(
+def _select_nearby(
     session: Session,
     *,
+    viewer_id: uuid.UUID,
     lat: float,
     lng: float,
     radius_km: float,
     limit: int,
     sort: str,
-) -> list[NearbyTask]:
+) -> list[tuple[Task, float]]:
+    """近傍の公開依頼を (依頼, 距離km) の並び済みリストで返す。
+
+    自分が出した依頼は受注できないため除外する。
+    """
     now = datetime.now(UTC)
     min_lat, max_lat, min_lng, max_lng = bounding_box(lat, lng, radius_km)
     candidates = task_repo.find_board_tasks_in_box(
@@ -255,54 +263,110 @@ def find_nearby(
     )
     active_counts = assignment_repo.count_active_by_task(session, [task.id for task in candidates])
 
-    results: list[NearbyTask] = []
+    found: list[tuple[Task, float]] = []
     for task in candidates:
+        if task.client_id == viewer_id:
+            continue  # 自分の依頼は一覧に出さない
         remaining = task.required_worker_count - active_counts.get(task.id, 0)
         if remaining <= 0:
             continue  # 0枠の依頼は一覧に出さない（docs/05-frontend.md 画面④）
         distance_m = haversine_meters(lat, lng, task.location_lat, task.location_lng)
         if distance_m > radius_km * 1000:
             continue
-        results.append(
-            NearbyTask(
-                id=task.id,
-                title=task.title,
-                reward_amount=task.reward_amount,
-                distance_km=round(distance_m / 1000, 2),
-                scheduled_at=task.scheduled_at,
-                deadline_at=task.deadline_at,
-                location_lat=task.location_lat,
-                location_lng=task.location_lng,
-                remaining_slots=remaining,
-                required_worker_count=task.required_worker_count,
-            )
-        )
+        found.append((task, round(distance_m / 1000, 2)))
 
     sort_keys = {
-        "distance": lambda item: item.distance_km,
-        "reward": lambda item: -item.reward_amount,
-        "deadline": lambda item: item.deadline_at,
+        "distance": lambda item: item[1],
+        "reward": lambda item: -item[0].reward_amount,
+        "deadline": lambda item: item[0].deadline_at,
     }
-    results.sort(key=sort_keys.get(sort, sort_keys["distance"]))
-    return results[:limit]
+    found.sort(key=sort_keys.get(sort, sort_keys["distance"]))
+    return found[:limit]
 
 
-def build_task_detail(
+async def find_nearby(
+    session: Session,
+    *,
+    viewer: User,
+    lat: float,
+    lng: float,
+    radius_km: float,
+    limit: int,
+    sort: str,
+    storage: StorageBackend,
+) -> list[NearbyTask]:
+    """近傍の公開依頼を投稿カードとして返す（ホーム・さがす）。"""
+    found = _select_nearby(
+        session,
+        viewer_id=viewer.id,
+        lat=lat,
+        lng=lng,
+        radius_km=radius_km,
+        limit=limit,
+        sort=sort,
+    )
+    return await task_card.build_cards(
+        session,
+        viewer=viewer,
+        tasks=[task for task, _ in found],
+        storage=storage,
+        distances_km={task.id: distance for task, distance in found},
+    )
+
+
+def count_nearby(
+    session: Session,
+    *,
+    viewer_id: uuid.UUID,
+    lat: float,
+    lng: float,
+    radius_km: float,
+    sort: str = "distance",
+    limit: int = 100,
+) -> int:
+    """保存した検索条件の「該当件数」表示用。カードは組み立てずに件数だけ数える。"""
+    return len(
+        _select_nearby(
+            session,
+            viewer_id=viewer_id,
+            lat=lat,
+            lng=lng,
+            radius_km=radius_km,
+            limit=limit,
+            sort=sort,
+        )
+    )
+
+
+async def build_task_detail(
     session: Session,
     *,
     task_id: uuid.UUID,
     user: User,
+    storage: StorageBackend,
     lat: float | None = None,
     lng: float | None = None,
 ) -> TaskDetail:
+    """依頼詳細。投稿をタップしたときに依頼主が入力した内容を一通り返す。"""
     task = task_repo.get(session, task_id)
     if task is None:
         raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
-    if user.role is UserRole.CLIENT and task.client_id != user.id:
-        raise Forbidden("他のクライアントの依頼は参照できません。")
+
+    # 依頼のオーナーか、それ以外（撮影する側）かで返す内容を変える（docs/03-api.md 3.4）
+    is_owner = task.client_id == user.id
+
+    # HOTタグの判定に使う閲覧数。自分の依頼を自分で開いた分は数えない
+    if not is_owner:
+        task.view_count = task_repo.increment_view_count(session, task.id)
+        session.commit()
+        session.refresh(task)
 
     settings = get_settings()
     active_count = assignment_repo.count_active(session, task.id)
+    owner = user_repo.get(session, task.client_id)
+    thumbnail_url, _ = await task_card.thumbnail_url(task, storage)
+    reference_images = await _signed_reference_images(task, storage)
+
     detail = TaskDetail(
         id=task.id,
         title=task.title,
@@ -318,19 +382,23 @@ def build_task_detail(
         remaining_slots=max(0, task.required_worker_count - active_count),
         status=task.status,
         review_summary=task.review_summary,
-        reference_images=[
-            ReferenceImage(id=image.id, image_url=image.image_url, sort_order=image.sort_order)
-            for image in task.reference_images
-        ],
-        # 画面⑤から依頼者の公開プロフィールへ遷移するために含める。
-        # クライアント自身が見た場合も同じ形（自分の情報が入るだけ）で出し分けはしない。
-        requester=user_service.build_requester_summary(session, task.client_id),
+        reference_images=reference_images,
+        created_at=task.created_at,
+        # 依頼主。公開プロフィールへ遷移できるよう id と依頼者としての実績も含める
+        # （docs/03-api.md 3.4.1）。自分の依頼を見た場合も同じ形で返す。
+        owner=(user_service.build_task_owner(session, owner) if owner is not None else None),
+        thumbnail_url=thumbnail_url,
+        badges=task_card.build_badges(task),
+        like_count=task.like_count,
+        is_liked=like_repo.get(session, user_id=user.id, task_id=task.id) is not None,
+        view_count=task.view_count,
+        is_mine=is_owner,
     )
 
-    if user.role is UserRole.CLIENT:
+    if is_owner:
         detail.timeline = _build_timeline(session, task)
     else:
-        # ワーカーには他ワーカーの提出画像を返さない（docs/03-api.md 3.4）
+        # 撮影する側には他ワーカーの提出画像を返さない（docs/03-api.md 3.4）
         if lat is not None and lng is not None:
             detail.distance_km = round(
                 haversine_meters(lat, lng, task.location_lat, task.location_lng) / 1000, 2
@@ -348,6 +416,20 @@ def build_task_detail(
                 latest_submission_id=latest.id if latest else None,
             )
     return detail
+
+
+async def _signed_reference_images(task: Task, storage: StorageBackend) -> list[ReferenceImage]:
+    """参考画像を表示できる形（署名付きURL）にして返す。"""
+    bucket = get_settings().storage_bucket_processed
+    images: list[ReferenceImage] = []
+    for image in task.reference_images:
+        try:
+            url = await storage.create_signed_url(bucket=bucket, key=image.image_url)
+        except Exception:  # noqa: BLE001 - 画像が出ないだけで詳細は表示する
+            logger.warning("参考画像URLを発行できませんでした", extra={"task_id": str(task.id)})
+            continue
+        images.append(ReferenceImage(id=image.id, image_url=url, sort_order=image.sort_order))
+    return images
 
 
 def list_my_assignments(session: Session, worker: User) -> list[MyAssignmentItem]:

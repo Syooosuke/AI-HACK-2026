@@ -11,10 +11,7 @@ from sqlalchemy.orm import Session
 from app.main import app
 from app.models import TaskStatus, User
 from app.services import user_service
-from tests.conftest import CLIENT_ID, WORKER_ID, make_task
-
-CLIENT_HEADERS = {"X-Demo-User-Id": str(CLIENT_ID)}
-WORKER_HEADERS = {"X-Demo-User-Id": str(WORKER_ID)}
+from tests.conftest import CLIENT_ID, WORKER_ID, auth_headers, make_task
 
 
 def create_tasks(session: Session, client: User, statuses: list[str]) -> None:
@@ -30,7 +27,7 @@ def test_response_never_contains_email_or_login_id(
 ) -> None:
     """非公開項目がレスポンスに現れないことを機械的に検証する。"""
     with TestClient(app) as client:
-        response = client.get(f"/api/users/{CLIENT_ID}/public", headers=WORKER_HEADERS)
+        response = client.get(f"/api/users/{CLIENT_ID}/public", headers=auth_headers(WORKER_ID))
 
     assert response.status_code == 200
     body = response.text
@@ -145,7 +142,7 @@ def test_unauthenticated_is_rejected(session: Session, users: dict[str, User]) -
 def test_unknown_user_returns_404(session: Session, users: dict[str, User]) -> None:
     unknown = "99999999-9999-9999-9999-999999999999"
     with TestClient(app) as client:
-        response = client.get(f"/api/users/{unknown}/public", headers=WORKER_HEADERS)
+        response = client.get(f"/api/users/{unknown}/public", headers=auth_headers(WORKER_ID))
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "USER_NOT_FOUND"
@@ -156,8 +153,8 @@ def test_worker_can_view_client_and_client_can_view_worker(
 ) -> None:
     """ロールの制約なく相互に閲覧できる。"""
     with TestClient(app) as client:
-        as_worker = client.get(f"/api/users/{CLIENT_ID}/public", headers=WORKER_HEADERS)
-        as_client = client.get(f"/api/users/{WORKER_ID}/public", headers=CLIENT_HEADERS)
+        as_worker = client.get(f"/api/users/{CLIENT_ID}/public", headers=auth_headers(WORKER_ID))
+        as_client = client.get(f"/api/users/{WORKER_ID}/public", headers=auth_headers(CLIENT_ID))
 
     assert as_worker.status_code == 200
     assert as_client.status_code == 200
@@ -171,17 +168,17 @@ def test_task_detail_includes_requester_summary(session: Session, users: dict[st
     task = make_task(session, client=users["client"])
 
     with TestClient(app) as client:
-        response = client.get(f"/api/tasks/{task.id}", headers=WORKER_HEADERS)
+        response = client.get(f"/api/tasks/{task.id}", headers=auth_headers(WORKER_ID))
 
     assert response.status_code == 200
-    requester = response.json()["requester"]
-    assert requester["id"] == str(CLIENT_ID)
-    assert requester["displayName"] == "デモ株式会社"
+    owner = response.json()["owner"]
+    assert owner["id"] == str(CLIENT_ID)
+    assert owner["displayName"] == "デモ株式会社"
     # completed 1件 + いま作った open 1件 → 母数2・完了1
-    assert requester["publishedTaskCount"] == 2
-    assert requester["completionRate"] == 0.5
-    # 要約にも非公開項目は載せない
-    assert "email" not in json.dumps(requester)
+    assert owner["publishedTaskCount"] == 2
+    assert owner["completionRate"] == 0.5
+    # 依頼主の要約にも非公開項目は載せない
+    assert "email" not in json.dumps(owner)
 
 
 def test_task_detail_requester_is_present_for_client_too(
@@ -191,9 +188,9 @@ def test_task_detail_requester_is_present_for_client_too(
     task = make_task(session, client=users["client"])
 
     with TestClient(app) as client:
-        response = client.get(f"/api/tasks/{task.id}", headers=CLIENT_HEADERS)
+        response = client.get(f"/api/tasks/{task.id}", headers=auth_headers(CLIENT_ID))
 
-    assert response.json()["requester"]["id"] == str(CLIENT_ID)
+    assert response.json()["owner"]["id"] == str(CLIENT_ID)
 
 
 def test_requester_summary_excludes_unpublished_tasks(
@@ -203,9 +200,9 @@ def test_requester_summary_excludes_unpublished_tasks(
     task = make_task(session, client=users["client"], status="open")
 
     with TestClient(app) as client:
-        response = client.get(f"/api/tasks/{task.id}", headers=WORKER_HEADERS)
+        response = client.get(f"/api/tasks/{task.id}", headers=auth_headers(WORKER_ID))
 
-    assert response.json()["requester"]["publishedTaskCount"] == 1
+    assert response.json()["owner"]["publishedTaskCount"] == 1
 
 
 def test_task_status_enum_covers_public_statuses() -> None:

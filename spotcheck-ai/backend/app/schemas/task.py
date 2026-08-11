@@ -10,9 +10,12 @@ from pydantic import Field
 
 from app.models.enums import AssignmentStatus, TaskStatus
 from app.schemas.common import CamelModel
-from app.schemas.user import RequesterSummary
 
 TimelineStepStatus = Literal["done", "current", "pending"]
+
+#: 投稿カードの左上に出すタグ。
+#: sold=取引終了 / new=新着 / hot=よく見られている
+TaskBadge = Literal["sold", "new", "hot"]
 
 
 class ReferenceImage(CamelModel):
@@ -103,6 +106,25 @@ class MyAssignment(CamelModel):
     latest_submission_id: uuid.UUID | None = None
 
 
+class TaskOwner(CamelModel):
+    """依頼主（投稿者）の表示用情報。
+
+    `id` は公開プロフィール `/users/[userId]` への導線に使う（docs/03-api.md 3.4.1）。
+    `published_task_count` / `completion_rate` は依頼者としての実績で、
+    受注前に「どんな依頼者か」を判断できるようにするために出す。
+    母数は公開された依頼のみで、却下・審査中の依頼は含めない。
+    """
+
+    id: uuid.UUID
+    display_name: str
+    trust_score: float
+    completed_task_count: int
+    avatar_url: str | None = None
+    published_task_count: int = 0
+    #: completed / published。母数0なら null
+    completion_rate: float | None = None
+
+
 class TaskDetail(CamelModel):
     id: uuid.UUID
     title: str
@@ -119,26 +141,49 @@ class TaskDetail(CamelModel):
     status: TaskStatus
     review_summary: str | None = None
     reference_images: list[ReferenceImage] = Field(default_factory=list)
-    #: 依頼者の要約。画面⑤から公開プロフィールへ遷移するために使う
-    requester: RequesterSummary | None = None
-    # client のみ
+    created_at: datetime
+    #: 依頼主。投稿をタップして詳細を見るときに誰の依頼か分かるようにする
+    owner: TaskOwner | None = None
+    thumbnail_url: str | None = None
+    badges: list[TaskBadge] = Field(default_factory=list)
+    like_count: int = 0
+    is_liked: bool = False
+    view_count: int = 0
+    is_mine: bool = False
+    # オーナーのみ
     timeline: list[TimelineStep] | None = None
-    # worker のみ
+    # 撮影する側のみ
     distance_km: float | None = None
     my_assignment: MyAssignment | None = None
 
 
 class NearbyTask(CamelModel):
+    """投稿一覧（ホーム・さがす・ハート欄）に並べる1件分。"""
+
     id: uuid.UUID
     title: str
     reward_amount: int
-    distance_km: float
+    #: 中心座標が分かる場合のみ入る（ハート欄では None）
+    distance_km: float | None = None
     scheduled_at: datetime
     deadline_at: datetime
     location_lat: float
     location_lng: float
+    location_address: str | None = None
     remaining_slots: int
     required_worker_count: int
+    status: TaskStatus
+    created_at: datetime
+    #: 正方形サムネイルの配信URL。生成前・取得失敗時は None
+    thumbnail_url: str | None = None
+    #: reference（参考画像）/ generated（AI生成）/ streetview / placeholder
+    thumbnail_source: str | None = None
+    badges: list[TaskBadge] = Field(default_factory=list)
+    like_count: int = 0
+    is_liked: bool = False
+    view_count: int = 0
+    #: 自分が出した依頼か（ハート欄には自分の依頼が並ぶこともある）
+    is_mine: bool = False
 
 
 class NearbyTaskListResponse(CamelModel):

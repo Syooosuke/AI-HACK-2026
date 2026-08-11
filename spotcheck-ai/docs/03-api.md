@@ -7,17 +7,20 @@
 
 ## 1. 共通仕様
 
-### 1.1 認証（デモ用 / D-06）
+### 1.1 認証（ログインID＋パスワード / D-06）
 
-すべてのリクエストにヘッダーを付与する。
+`POST /api/auth/login`（または `/api/auth/signup`）で得たトークンを、
+以降のすべてのリクエストに付与する。
 
 ```
-X-Demo-User-Id: <users.id の UUID>
+Authorization: Bearer <アクセストークン(JWT)>
 ```
 
-- ヘッダーが無い、または存在しないIDの場合は `401 UNAUTHENTICATED` を返す。
-- 各エンドポイントは、要求ロール（client / worker）と一致しない場合 `403 FORBIDDEN` を返す。
-- `app/api/deps.py` に `get_current_user()` / `require_role(role)` を実装し、本認証への差し替え時にここだけ修正すれば済む構造にする。
+- ヘッダーが無い・形式不正・署名不正・期限切れ・利用者が存在しない場合はいずれも `401 UNAUTHENTICATED`。
+- **ロールによる出し分けは行わない。** 1アカウントで「依頼する」「撮影する」の両方ができる。
+  権限は「依頼のオーナーか、その依頼の受注者か」で判定し、該当しなければ `403 FORBIDDEN` を返す。
+- トークンは JWT（HS256）。鍵は `JWT_SECRET`、有効期間は `JWT_EXPIRE_DAYS`（既定30日）。
+- `app/api/deps.py` の `get_current_user()` が唯一の入口。
 
 ### 1.2 エラーレスポンス
 
@@ -36,10 +39,10 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | HTTP | code の例 | 用途 |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | 入力値不正。`details` にフィールド別エラー |
-| 401 | `UNAUTHENTICATED` | ヘッダー欠落 |
-| 403 | `FORBIDDEN` | ロール不一致・他人のリソース |
+| 401 | `UNAUTHENTICATED` `INVALID_CREDENTIALS` | 未ログイン・トークン不正・認証情報の誤り |
+| 403 | `FORBIDDEN` `CANNOT_ACCEPT_OWN_TASK` `CANNOT_LIKE_OWN_TASK` | 他人のリソース・自分の依頼の受注／いいね |
 | 404 | `TASK_NOT_FOUND` `SUBMISSION_NOT_FOUND` | |
-| 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` | 状態競合 |
+| 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` `LOGIN_ID_TAKEN` `SAVED_SEARCH_LIMIT` | 状態競合・上限超過 |
 | 413 | `FILE_TOO_LARGE` | 画像サイズ超過 |
 | 502 | `AI_SERVICE_ERROR` | OrcaRouter呼び出し失敗 |
 
@@ -57,26 +60,87 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 ## 2. エンドポイント一覧
 
-| メソッド | パス | ロール | 概要 |
+「認証」列の `-` は認証不要、`必須` はトークンが必要なことを示す。
+アクセス範囲はロールではなくリソースの所有関係で決まる。
+
+| メソッド | パス | 認証 | 概要 |
 |---|---|---|---|
 | GET | `/api/health` | - | ヘルスチェック |
-| GET | `/api/users/demo` | - | デモユーザー一覧（画面切替用） |
-| GET | `/api/users/{userId}/public` | both | 公開プロフィール（閲覧用） |
-| POST | `/api/tasks` | client | 依頼作成＋AI審査（同期） |
-| POST | `/api/tasks/{taskId}/resubmit` | client | 補足情報を追記して再審査 |
-| GET | `/api/tasks` | client | 自分の依頼一覧 |
-| GET | `/api/tasks/{taskId}` | both | 依頼詳細＋進行状況 |
-| GET | `/api/tasks/nearby` | worker | 近傍の公開依頼一覧 |
-| POST | `/api/tasks/{taskId}/accept` | worker | 受注 |
-| POST | `/api/tasks/{taskId}/cancel` | client | 依頼取消 |
-| GET | `/api/assignments/mine` | worker | 自分の受注一覧 |
-| POST | `/api/submissions` | worker | 画像＋メタデータ提出 |
-| GET | `/api/submissions/{submissionId}` | both | 検品状況・結果のポーリング |
-| GET | `/api/tasks/{taskId}/results` | client | 合格済み提出の一覧（画面⑨） |
+| POST | `/api/auth/signup` | - | 新規登録（トークンを返す） |
+| POST | `/api/auth/login` | - | ログイン |
+| GET | `/api/auth/me` | 必須 | ログイン中ユーザーの取得・トークン検証 |
+| GET | `/api/users/{userId}/public` | 必須 | 公開プロフィール（閲覧用） |
+| POST | `/api/tasks` | 必須 | 依頼作成＋AI審査（同期） |
+| POST | `/api/tasks/{taskId}/resubmit` | 必須 | 補足情報を追記して再審査（オーナーのみ） |
+| GET | `/api/tasks` | 必須 | 自分が出した依頼の一覧 |
+| GET | `/api/tasks/{taskId}` | 必須 | 依頼詳細＋進行状況 |
+| GET | `/api/tasks/nearby` | 必須 | 近傍の公開依頼一覧（自分の依頼は除く） |
+| POST | `/api/tasks/{taskId}/accept` | 必須 | 受注（自分の依頼は不可） |
+| POST | `/api/tasks/{taskId}/cancel` | 必須 | 依頼取消（オーナーのみ） |
+| GET | `/api/assignments/mine` | 必須 | 自分の受注一覧 |
+| POST | `/api/submissions` | 必須 | 画像＋メタデータ提出 |
+| GET | `/api/submissions/{submissionId}` | 必須 | 検品状況・結果のポーリング（本人とオーナーのみ） |
+| GET | `/api/tasks/{taskId}/results` | 必須 | 合格済み提出の一覧（画面⑨。オーナーのみ） |
+| POST | `/api/tasks/{taskId}/like` | 必須 | いいねを付ける（自分の依頼は不可） |
+| DELETE | `/api/tasks/{taskId}/like` | 必須 | いいねを取り消す |
+| GET | `/api/likes` | 必須 | いいねした投稿の一覧（いいね欄の上半分） |
+| GET | `/api/saved-searches` | 必須 | 保存した検索条件（いいね欄の下半分） |
+| POST | `/api/saved-searches` | 必須 | 検索条件を保存する |
+| DELETE | `/api/saved-searches/{searchId}` | 必須 | 検索条件を削除する |
 
 ---
 
 ## 3. 詳細
+
+### 3.0 認証 `/api/auth/*`
+
+#### `POST /api/auth/signup` — 新規登録
+
+**リクエスト**
+
+| フィールド | 型 | 必須 | 制約 |
+|---|---|---|---|
+| `loginId` | string | ✓ | 3〜32文字。半角英数字とアンダースコアのみ |
+| `password` | string | ✓ | 8文字以上・72バイト以内（bcryptの上限） |
+| `displayName` | string | ✓ | 1〜40文字 |
+
+- ログインIDが既に使われている場合は `409 LOGIN_ID_TAKEN`。
+- 登録に成功するとそのままログイン状態にできるよう、トークンを返す（`201`）。
+
+#### `POST /api/auth/login` — ログイン
+
+**リクエスト**: `loginId` / `password`
+
+- ログインIDの大文字小文字は区別しない。
+- IDが存在しない場合とパスワード誤りは**同じ応答**にする（`401 INVALID_CREDENTIALS`）。
+  IDの存在を推測させないため、メッセージも区別しない。
+
+**レスポンス `200`**（signup も同じ形）
+```json
+{
+  "token": "<JWT>",
+  "tokenType": "Bearer",
+  "expiresIn": 2592000,
+  "user": {
+    "id": "uuid",
+    "loginId": "yamada",
+    "displayName": "山田 太郎",
+    "trustScore": 92.0,
+    "completedTaskCount": 3,
+    "avatarUrl": null
+  }
+}
+```
+
+> `passwordHash` はいかなるレスポンスにも含めない。
+
+#### `GET /api/auth/me` — ログイン中ユーザー
+
+保持しているトークンの有効性確認と、ユーザー情報の最新化に使う。
+
+**レスポンス `200`**: `{ "user": { ...上と同じ } }`
+
+---
 
 ### 3.1 `POST /api/tasks` — 依頼作成＋AI審査
 
@@ -161,7 +225,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 | 名前 | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `lat` | number | 必須 | ワーカーの現在地 |
+| `lat` | number | 必須 | 検索の中心（現在地、または地図で検索した地点） |
 | `lng` | number | 必須 | |
 | `radiusKm` | number | 5 | 0.5〜50 |
 | `limit` | int | 50 | 最大100 |
@@ -170,6 +234,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 **抽出条件**
 - `status = 'open'` または（`status='in_progress'` かつ 空き枠あり）
 - `deadline_at > now()`
+- **自分が出した依頼は除外する**（受注できないため）
 - バウンディングボックスで粗く絞り、Haversineで正確な距離を計算して `radiusKm` 内に限定
 
 **レスポンス `200`**
@@ -185,8 +250,18 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
       "deadlineAt": "2026-05-28T14:00:00+09:00",
       "locationLat": 35.6595,
       "locationLng": 139.7005,
+      "locationAddress": "東京都渋谷区道玄坂1丁目",
       "remainingSlots": 1,
-      "requiredWorkerCount": 1
+      "requiredWorkerCount": 1,
+      "status": "open",
+      "createdAt": "2026-05-24T10:30:00+09:00",
+      "thumbnailUrl": "https://.../task-thumbnail/....jpg",
+      "thumbnailSource": "generated",
+      "badges": ["new"],
+      "likeCount": 3,
+      "isLiked": false,
+      "viewCount": 21,
+      "isMine": false
     }
   ]
 }
@@ -194,28 +269,43 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 `remainingSlots = required_worker_count − COUNT(status IN ('accepted','submitted','approved'))`
 
+**投稿カード用のフィールド**（`/api/likes` も同じ形で返す）
+
+| フィールド | 説明 |
+|---|---|
+| `thumbnailUrl` | 正方形サムネイルの配信URL。生成前は `null` |
+| `thumbnailSource` | `reference` / `generated` / `streetview` / `placeholder` |
+| `badges` | 優先順位の高い順の配列。`sold`（取引終了）> `hot`（閲覧20以上）> `new`（24時間以内）。カードは先頭1つだけを表示する |
+| `likeCount` `isLiked` | いいねの数と、自分が押しているか |
+| `viewCount` | 詳細を開かれた回数（オーナー自身の閲覧は数えない） |
+| `isMine` | 自分が出した依頼か。`true` のときハートは出さない |
+
 ---
 
 ### 3.4 `GET /api/tasks/{taskId}` — 依頼詳細
 
-ロールによって返す内容を変える。
+依頼のオーナー（`client_id` が自分）か、それ以外（撮影する側）かで返す内容を変える。
 
-**共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[], requester
+**共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[], createdAt, owner, thumbnailUrl, badges, likeCount, isLiked, viewCount, isMine
 
-`requester` は依頼者の要約。画面⑤から公開プロフィール（3.4.1）へ遷移するために使う。
-クライアント自身が見た場合も同じ形で返す（出し分けはしない）。
+`owner` は依頼主。`id` を使って公開プロフィール（3.4.1）へ遷移できる。
+`publishedTaskCount` / `completionRate` は依頼者としての実績で、受注前に「どんな依頼者か」を
+判断できるようにするために出す。**母数は公開された依頼のみ**で、却下・審査中は含めない。
+自分の依頼を見た場合も同じ形で返す（出し分けはしない）。
 
 ```json
-"requester": {
+"owner": {
   "id": "uuid",
   "displayName": "デモ株式会社",
+  "trustScore": 92.0,
+  "completedTaskCount": 3,
   "avatarUrl": null,
   "publishedTaskCount": 12,
   "completionRate": 0.75
 }
 ```
 
-**client のとき追加**: `timeline`（画面③の進行状況タイムライン）
+**オーナーのとき追加**: `timeline`（画面③の進行状況タイムライン）
 ```json
 "timeline": [
   { "step": "published",   "label": "依頼公開",   "status": "done",    "at": "2026-05-24T10:30:00+09:00" },
@@ -227,15 +317,15 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 ```
 `status` は `done` / `current` / `pending` の3値。
 
-**worker のとき追加**: `distanceKm`（クエリ `lat`/`lng` があれば計算）、`myAssignment`（自分の受注状況。無ければ null）
+**オーナー以外のとき追加**: `distanceKm`（クエリ `lat`/`lng` があれば計算）、`myAssignment`（自分の受注状況。無ければ null）
 
-> **ワーカーには他ワーカーの提出画像を返さない。**
+> **撮影する側には他ワーカーの提出画像を返さない。**
 
 ---
 
 ### 3.4.1 `GET /api/users/{userId}/public` — 公開プロフィール（閲覧用）
 
-画面⑤の依頼者行から遷移する閲覧専用ページ用。**ロールの制約はなく、誰でも誰でも参照できる**
+依頼詳細の依頼主行から遷移する閲覧専用ページ用。**ロールによる出し分けはなく、ログインしていれば誰でも参照できる**
 （1アカウントが依頼者とワーカーの両面を持ちうる）。認証は必要。
 
 **レスポンス `200`**
@@ -283,10 +373,11 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 **処理（1トランザクション）**
 1. `SELECT ... FOR UPDATE` で tasks をロック。
-2. `deadline_at` 超過 → `409 INVALID_STATE`。
-3. 同一ワーカーの有効な assignment が既にある → `409 ALREADY_ACCEPTED`。
-4. 空き枠なし → `409 TASK_FULL`。
-5. assignment を `accepted` で作成。tasks を `in_progress` に更新。
+2. 自分が出した依頼 → `403 CANNOT_ACCEPT_OWN_TASK`。
+3. `deadline_at` 超過 → `409 INVALID_STATE`。
+4. 同一ワーカーの有効な assignment が既にある → `409 ALREADY_ACCEPTED`。
+5. 空き枠なし → `409 TASK_FULL`。
+6. assignment を `accepted` で作成。tasks を `in_progress` に更新。
 
 **レスポンス `201`**
 ```json
@@ -435,3 +526,40 @@ client のみ。`ai_validation_status='approved'` の submission のみを返す
 ### 4.2 起動時の実行
 
 FastAPIの `lifespan` でスケジューラを起動・停止する。起動直後にも1回実行し、停止中に期限切れになったタスクを回収する。
+
+---
+
+### 3.10 いいね `/api/tasks/{taskId}/like` `/api/likes`
+
+投稿カード右上のハートに対応する。
+
+- `POST` / `DELETE` はどちらも**冪等**。二重タップでも件数はずれない。
+- 自分が出した依頼にはいいねできない → `403 CANNOT_LIKE_OWN_TASK`
+  （受注できない依頼をハート欄に溜めないため）。
+- `tasks.like_count` に集計値を持たせ、一覧で件数を引くためのN+1を避ける。
+
+**レスポンス `200`**（付けた場合・取り消した場合ともに同じ形）
+```json
+{ "taskId": "uuid", "liked": true, "likeCount": 3 }
+```
+
+`GET /api/likes` は**いいねした順（新しい順）**で投稿カードを返す。
+取引終了（`completed`）した依頼も一覧から消さず、`badges` に `sold` を付けて返す。
+
+---
+
+### 3.11 保存した検索条件 `/api/saved-searches`
+
+**`POST` リクエスト**
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `label` | string | | 一覧に出す名前。未指定なら「<住所> から5km」を自動生成 |
+| `centerLat` / `centerLng` | number | ✓ | 検索の中心 |
+| `locationAddress` | string | | 検索に使った住所（表示用） |
+| `radiusKm` | number | | 0.5〜50（既定5） |
+| `sort` | string | | `distance` / `reward` / `deadline` |
+
+- 1ユーザーあたり20件まで。超過は `409 SAVED_SEARCH_LIMIT`。
+- `lastMatchCount` には**一覧を開いた時点の該当件数**を入れて返す（保存後に増減するため）。
+- 他ユーザーの条件は取得も削除もできない（`403 FORBIDDEN`）。

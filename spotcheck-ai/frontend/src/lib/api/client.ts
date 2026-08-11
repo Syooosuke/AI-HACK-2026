@@ -3,8 +3,8 @@
  * コンポーネントから `fetch` を直接書かず、必ずこの関数を経由する（CLAUDE.md 5節）。
  */
 
-import { getDemoUserId } from "@/lib/demoUser";
 import { env } from "@/lib/env";
+import { clearSession, getToken } from "@/lib/session";
 
 /** docs/03-api.md 1.2 のエラーレスポンス形式。 */
 export type ApiErrorBody = {
@@ -31,8 +31,8 @@ export class ApiError extends Error {
 
 export type ApiFetchOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, unknown> | null;
-  /** 明示的に上書きしたい場合のみ指定する。既定は localStorage のデモユーザー（D-06）。 */
-  demoUserId?: string | null;
+  /** 認証不要のエンドポイント（ログイン・新規登録）では false にする。 */
+  auth?: boolean;
 };
 
 /** APIが返す相対的な画像URLを、バックエンドを指す絶対URLへ変換する。 */
@@ -41,7 +41,7 @@ export function resolveApiUrl(url: string): string {
 }
 
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  const { body, demoUserId, headers, ...rest } = options;
+  const { body, auth = true, headers, ...rest } = options;
   const requestHeaders = new Headers(headers);
 
   let requestBody: BodyInit | null | undefined;
@@ -53,9 +53,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     requestBody = JSON.stringify(body);
   }
 
-  const userId = demoUserId !== undefined ? demoUserId : getDemoUserId();
-  if (userId) {
-    requestHeaders.set("X-Demo-User-Id", userId);
+  if (auth) {
+    const token = getToken();
+    if (token) {
+      requestHeaders.set("Authorization", `Bearer ${token}`);
+    }
   }
 
   let response: Response;
@@ -83,6 +85,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   if (!response.ok) {
     const errorBody = payload as ApiErrorBody | null;
+    if (response.status === 401 && auth) {
+      // トークンが無効・期限切れになったらセッションを捨てる。
+      // 画面側は AuthGuard がログイン画面へ戻す。
+      clearSession();
+    }
     throw new ApiError(
       response.status,
       errorBody?.error?.code ?? "HTTP_ERROR",

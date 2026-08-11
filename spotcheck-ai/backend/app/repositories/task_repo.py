@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import Task, TaskReferenceImage, TaskStatus
@@ -77,3 +77,14 @@ def add_reference_image(
     session.add(image)
     session.flush()
     return image
+
+
+def increment_view_count(session: Session, task_id: uuid.UUID) -> int:
+    """閲覧数を1増やして新しい値を返す。同時アクセスでも取りこぼさないようSQLで加算する。"""
+    stmt = (
+        update(Task)
+        .where(Task.id == task_id)
+        .values(view_count=Task.view_count + 1)
+        .returning(Task.view_count)
+    )
+    return session.execute(stmt).scalar_one()

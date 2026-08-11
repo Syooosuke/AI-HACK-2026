@@ -9,11 +9,6 @@ from __future__ import annotations
 import enum
 
 
-class UserRole(str, enum.Enum):
-    CLIENT = "client"
-    WORKER = "worker"
-
-
 class TaskStatus(str, enum.Enum):
     SCREENING = "screening"
     REJECTED = "rejected"

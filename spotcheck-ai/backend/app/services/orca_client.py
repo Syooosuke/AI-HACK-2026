@@ -30,7 +30,13 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-Purpose = Literal["task_review", "image_validation", "environment_check", "result_summary"]
+Purpose = Literal[
+    "task_review",
+    "image_validation",
+    "environment_check",
+    "result_summary",
+    "thumbnail_generation",
+]
 Tier = Literal["light", "vision"]
 
 STUB_MODEL_NAME = "stub"
@@ -91,6 +97,15 @@ class OrcaResult:
     model: str
     latency_ms: int
     is_stub: bool
+
+
+@dataclass
+class GeneratedImage:
+    """画像生成の結果。`data` は JPEG/PNG のバイト列。"""
+
+    data: bytes
+    model: str
+    latency_ms: int
 
 
 class InvocationRecorder(Protocol):
@@ -446,6 +461,121 @@ class OrcaClient:
             recorder(**kwargs)
         except Exception:
             logger.exception("ai_invocations への記録に失敗しました")
+
+    # ------------------------------------------------------------------
+    # 画像生成（投稿サムネイル）
+    # ------------------------------------------------------------------
+    @property
+    def image_generation_enabled(self) -> bool:
+        """画像生成が使えるか。
+
+        ルーター名（`ORCA_ROUTER_IMAGE`）が未設定、またはスタブモードでは使えない。
+        使えない場合、呼び出し側はストリートビュー画像などへフォールバックする。
+        """
+        return bool(self._settings.orca_router_image) and not self.is_stub
+
+    async def generate_image(
+        self,
+        *,
+        prompt: str,
+        size: int,
+        recorder: InvocationRecorder | None = None,
+        related_type: str | None = None,
+        related_id: uuid.UUID | None = None,
+    ) -> GeneratedImage:
+        """テキストから画像を生成する（OpenAI images 互換のエンドポイントを想定）。
+
+        TODO(human-decision): OrcaRouter の画像生成APIの正式な形式が未確認。
+        判明したらこのメソッドの内部だけを差し替える（呼び出し側は変更不要）。
+        """
+        if not self.image_generation_enabled:
+            raise AIServiceError("画像生成が有効ではありません（ORCA_ROUTER_IMAGE が未設定です）。")
+
+        router = self._settings.orca_router_image
+        payload: dict[str, Any] = {
+            "model": router,
+            "prompt": prompt,
+            "size": f"{size}x{size}",
+            "n": 1,
+            "response_format": "b64_json",
+        }
+        started = time.perf_counter()
+        try:
+            response = await self._http().post(self._settings.orca_images_path, json=payload)
+        except httpx.HTTPError as exc:
+            self._record(
+                recorder,
+                purpose="thumbnail_generation",
+                related_type=related_type,
+                related_id=related_id,
+                model=router,
+                request_payload={"prompt": prompt, "size": size},
+                response_payload=None,
+                latency_ms=_elapsed_ms(started),
+                is_stub=False,
+                error=str(exc),
+            )
+            raise AIServiceError("画像生成の呼び出しに失敗しました。") from exc
+
+        latency_ms = _elapsed_ms(started)
+        if response.status_code >= 300:
+            self._record(
+                recorder,
+                purpose="thumbnail_generation",
+                related_type=related_type,
+                related_id=related_id,
+                model=router,
+                request_payload={"prompt": prompt, "size": size},
+                response_payload=None,
+                latency_ms=latency_ms,
+                is_stub=False,
+                error=f"status={response.status_code} body={response.text[:300]}",
+            )
+            raise AIServiceError("画像生成に失敗しました。")
+
+        body = response.json()
+        image_bytes = await self._extract_image(body)
+        self._record(
+            recorder,
+            purpose="thumbnail_generation",
+            related_type=related_type,
+            related_id=related_id,
+            model=body.get("model") or router,
+            request_payload={"prompt": prompt, "size": size},
+            # 画像そのものはログへ残さない（サイズが大きいため）
+            response_payload={"bytes": len(image_bytes)},
+            latency_ms=latency_ms,
+            is_stub=False,
+            error=None,
+        )
+        return GeneratedImage(
+            data=image_bytes, model=body.get("model") or router, latency_ms=latency_ms
+        )
+
+    async def _extract_image(self, body: dict[str, Any]) -> bytes:
+        """`b64_json` と `url` のどちらの形式でも画像バイト列を取り出す。"""
+        items = body.get("data") or []
+        if not isinstance(items, list) or not items:
+            raise AIServiceError("画像生成の応答に画像が含まれていません。")
+        first = items[0] if isinstance(items[0], dict) else {}
+
+        encoded = first.get("b64_json")
+        if isinstance(encoded, str) and encoded:
+            try:
+                return base64.b64decode(encoded)
+            except (ValueError, TypeError) as exc:
+                raise AIServiceError("画像生成の応答を復号できませんでした。") from exc
+
+        url = first.get("url")
+        if isinstance(url, str) and url:
+            try:
+                downloaded = await self._http().get(url)
+                downloaded.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise AIServiceError("生成された画像を取得できませんでした。") from exc
+            return downloaded.content
+
+        raise AIServiceError("画像生成の応答形式が想定と異なります。")
 
     async def close(self) -> None:
         if self._client is not None:
