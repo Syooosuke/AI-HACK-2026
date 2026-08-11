@@ -19,7 +19,6 @@ from app.models import (
     Task,
     TaskStatus,
     User,
-    UserRole,
 )
 from app.models.task import MAX_REFERENCE_IMAGES
 from app.repositories import assignment_repo, submission_repo, task_repo
@@ -154,24 +153,28 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
     if task is None:
         raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
 
-    # 2. 期限・状態の確認
+    # 2. 自分が出した依頼は受注できない（1アカウントで両方の役割を持つため明示的に弾く）
+    if task.client_id == worker.id:
+        raise Forbidden("自分が作成した依頼は受注できません。", code="CANNOT_ACCEPT_OWN_TASK")
+
+    # 3. 期限・状態の確認
     if task.status not in (TaskStatus.OPEN, TaskStatus.IN_PROGRESS):
         raise Conflict("この依頼は現在受注できません。", code="INVALID_STATE")
     if task.deadline_at <= datetime.now(UTC):
         raise Conflict("この依頼は期限を過ぎています。", code="INVALID_STATE")
 
-    # 3. 同一ワーカーの重複受注
+    # 4. 同一ワーカーの重複受注
     existing = assignment_repo.get_by_task_and_worker(session, task_id=task_id, worker_id=worker.id)
     if existing is not None:
         if existing.status in (AssignmentStatus.ACCEPTED, AssignmentStatus.SUBMITTED):
             raise Conflict("すでにこの依頼を受注しています。", code="ALREADY_ACCEPTED")
         raise Conflict("この依頼はすでに完了または失格となっています。", code="ALREADY_ACCEPTED")
 
-    # 4. 空き枠の確認
+    # 5. 空き枠の確認
     if assignment_repo.count_active(session, task_id) >= task.required_worker_count:
         raise Conflict("受注枠がすでに埋まっています。", code="TASK_FULL")
 
-    # 5. 受注を作成し、依頼を進行中にする
+    # 6. 受注を作成し、依頼を進行中にする
     assignment = assignment_repo.create(session, task_id=task_id, worker_id=worker.id)
     task.status = TaskStatus.IN_PROGRESS
     session.flush()
@@ -237,12 +240,14 @@ def list_client_tasks(session: Session, client: User) -> list[TaskListItem]:
 def find_nearby(
     session: Session,
     *,
+    viewer_id: uuid.UUID,
     lat: float,
     lng: float,
     radius_km: float,
     limit: int,
     sort: str,
 ) -> list[NearbyTask]:
+    """近傍の公開依頼。自分が出した依頼は受注できないため一覧から除く。"""
     now = datetime.now(UTC)
     min_lat, max_lat, min_lng, max_lng = bounding_box(lat, lng, radius_km)
     candidates = task_repo.find_board_tasks_in_box(
@@ -257,6 +262,8 @@ def find_nearby(
 
     results: list[NearbyTask] = []
     for task in candidates:
+        if task.client_id == viewer_id:
+            continue  # 自分の依頼は「さがす」に出さない
         remaining = task.required_worker_count - active_counts.get(task.id, 0)
         if remaining <= 0:
             continue  # 0枠の依頼は一覧に出さない（docs/05-frontend.md 画面④）
@@ -298,9 +305,9 @@ def build_task_detail(
     task = task_repo.get(session, task_id)
     if task is None:
         raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
-    if user.role is UserRole.CLIENT and task.client_id != user.id:
-        raise Forbidden("他のクライアントの依頼は参照できません。")
 
+    # 依頼のオーナーか、それ以外（撮影する側）かで返す内容を変える（docs/03-api.md 3.4）
+    is_owner = task.client_id == user.id
     settings = get_settings()
     active_count = assignment_repo.count_active(session, task.id)
     detail = TaskDetail(
@@ -324,10 +331,10 @@ def build_task_detail(
         ],
     )
 
-    if user.role is UserRole.CLIENT:
+    if is_owner:
         detail.timeline = _build_timeline(session, task)
     else:
-        # ワーカーには他ワーカーの提出画像を返さない（docs/03-api.md 3.4）
+        # 撮影する側には他ワーカーの提出画像を返さない（docs/03-api.md 3.4）
         if lat is not None and lng is not None:
             detail.distance_km = round(
                 haversine_meters(lat, lng, task.location_lat, task.location_lng) / 1000, 2

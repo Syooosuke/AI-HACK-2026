@@ -79,6 +79,7 @@ def test_expired_task_disappears_from_worker_list(session: Session, users: dict[
     task = make_task(session, client=users["client"])
     found = task_service.find_nearby(
         session,
+        viewer_id=users["worker"].id,
         lat=task.location_lat,
         lng=task.location_lng,
         radius_km=5,
@@ -94,6 +95,7 @@ def test_expired_task_disappears_from_worker_list(session: Session, users: dict[
     assert (
         task_service.find_nearby(
             session,
+            viewer_id=users["worker"].id,
             lat=task.location_lat,
             lng=task.location_lng,
             radius_km=5,

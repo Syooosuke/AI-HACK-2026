@@ -12,7 +12,6 @@ from app.models.enums import (
     PaymentDirection,
     PaymentStatus,
     TaskStatus,
-    UserRole,
     ValidationStatus,
 )
 from app.models.payment import Payment
@@ -35,6 +34,5 @@ __all__ = [
     "TaskReferenceImage",
     "TaskStatus",
     "User",
-    "UserRole",
     "ValidationStatus",
 ]

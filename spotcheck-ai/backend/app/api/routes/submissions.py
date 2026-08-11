@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession, WorkerUser
+from app.api.deps import CurrentUser, DbSession
 from app.core.storage import get_storage
 from app.schemas.submission import SubmissionCreateResponse, SubmissionStatusResponse
 from app.services import submission_pipeline, submission_service
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/submissions", tags=["submissions"])
 @router.post("", response_model=SubmissionCreateResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_submission(
     session: DbSession,
-    worker: WorkerUser,
+    worker: CurrentUser,
     background_tasks: BackgroundTasks,
     assignment_id: Annotated[uuid.UUID, Form(alias="assignmentId")],
     captured_lat: Annotated[float, Form(alias="capturedLat", ge=-90, le=90)],

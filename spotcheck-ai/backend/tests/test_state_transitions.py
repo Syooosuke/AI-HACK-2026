@@ -216,7 +216,13 @@ def test_expired_task_is_hidden_from_nearby(session: Session, users: dict[str, U
     """期限切れの依頼は近傍検索に出てこない。"""
     make_task(session, client=users["client"], deadline_offset_hours=-1)
     found = task_service.find_nearby(
-        session, lat=35.6595, lng=139.7005, radius_km=5, limit=50, sort="distance"
+        session,
+        viewer_id=users["worker"].id,
+        lat=35.6595,
+        lng=139.7005,
+        radius_km=5,
+        limit=50,
+        sort="distance",
     )
     assert found == []
 

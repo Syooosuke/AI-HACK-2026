@@ -20,7 +20,6 @@ from app.models import (
     Task,
     TaskAssignment,
     User,
-    UserRole,
     ValidationStatus,
 )
 from app.repositories import assignment_repo, submission_repo, task_repo
@@ -152,10 +151,9 @@ async def get_submission_status(
     if assignment is None or task is None:
         raise NotFound("指定された提出が見つかりません。", code="SUBMISSION_NOT_FOUND")
 
-    if user.role is UserRole.WORKER and submission.worker_id != user.id:
-        raise Forbidden("他のワーカーの提出は参照できません。")
-    if user.role is UserRole.CLIENT and task.client_id != user.id:
-        raise Forbidden("他のクライアントの依頼の提出は参照できません。")
+    # 参照できるのは「提出したワーカー本人」と「依頼のオーナー」のみ
+    if submission.worker_id != user.id and task.client_id != user.id:
+        raise Forbidden("この提出を参照する権限がありません。")
 
     feedback = submission.ai_feedback or {}
     checks = feedback.get("checks", {})
