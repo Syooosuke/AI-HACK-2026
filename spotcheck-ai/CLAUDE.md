@@ -178,6 +178,19 @@ git config core.hooksPath .githooks
 
 ---
 
+### 6.5 Issue の書き方
+
+**Issue は必ず6つの欄（背景 / As-Is / To-Be / 懸念事項 / 作業内容 / 関連コード）で書く。**
+着手する人が課題を理解しながら進められる状態にするため。詳細は `.claude/issue-guidelines.md`。
+
+- `As-Is` は**実際にコードを読んで**書く。推測で書かない
+- `関連コード` は `backend/app/services/xxx.py:42` の形式で**行番号まで**示す
+- 判断が必要な点（3節の「人間に確認すべきケース」に該当するもの）は `懸念事項` に明記する
+- 保守や不具合修正に限らず、**新機能の提案も Issue にする**
+- GitHub の画面から作ると `.github/ISSUE_TEMPLATE/task.md` が読み込まれる
+
+---
+
 ## 7. 作業の進め方
 
 1. `docs/06-phases.md` のフェーズ順に実装する。フェーズを飛ばさない。
