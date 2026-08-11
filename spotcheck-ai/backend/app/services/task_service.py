@@ -36,7 +36,7 @@ from app.schemas.task import (
     TaskSummary,
     TimelineStep,
 )
-from app.services import task_review
+from app.services import task_review, user_service
 from app.services.orca_client import OrcaClient
 from app.services.uploads import extension_for, read_and_validate_image
 
@@ -322,6 +322,9 @@ def build_task_detail(
             ReferenceImage(id=image.id, image_url=image.image_url, sort_order=image.sort_order)
             for image in task.reference_images
         ],
+        # 画面⑤から依頼者の公開プロフィールへ遷移するために含める。
+        # クライアント自身が見た場合も同じ形（自分の情報が入るだけ）で出し分けはしない。
+        requester=user_service.build_requester_summary(session, task.client_id),
     )
 
     if user.role is UserRole.CLIENT:

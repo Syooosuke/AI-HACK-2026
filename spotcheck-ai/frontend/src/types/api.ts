@@ -128,6 +128,38 @@ export type ReferenceImage = {
   sortOrder: number;
 };
 
+/** 画面⑤の依頼者行に出す要約（docs/03-api.md 3.4）。 */
+export type RequesterSummary = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  publishedTaskCount: number;
+  /** 母数0のときは null */
+  completionRate: number | null;
+};
+
+export type RequesterStats = {
+  publishedTaskCount: number;
+  completedTaskCount: number;
+  completionRate: number | null;
+};
+
+export type WorkerStats = {
+  /** 5段階へ換算済み */
+  trustScore: number;
+  approvedSubmissionCount: number;
+};
+
+/** 閲覧専用の公開プロフィール。email / loginId は含まれない。 */
+export type PublicProfile = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  joinedAt: string;
+  asRequester: RequesterStats;
+  asWorker: WorkerStats;
+};
+
 export type TaskDetail = {
   id: string;
   title: string;
@@ -144,6 +176,7 @@ export type TaskDetail = {
   status: TaskStatus;
   reviewSummary: string | null;
   referenceImages: ReferenceImage[];
+  requester: RequesterSummary | null;
   timeline: TimelineStep[] | null;
   distanceKm: number | null;
   myAssignment: MyAssignment | null;

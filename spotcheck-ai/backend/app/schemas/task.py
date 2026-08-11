@@ -10,6 +10,7 @@ from pydantic import Field
 
 from app.models.enums import AssignmentStatus, TaskStatus
 from app.schemas.common import CamelModel
+from app.schemas.user import RequesterSummary
 
 TimelineStepStatus = Literal["done", "current", "pending"]
 
@@ -118,6 +119,8 @@ class TaskDetail(CamelModel):
     status: TaskStatus
     review_summary: str | None = None
     reference_images: list[ReferenceImage] = Field(default_factory=list)
+    #: 依頼者の要約。画面⑤から公開プロフィールへ遷移するために使う
+    requester: RequesterSummary | None = None
     # client のみ
     timeline: list[TimelineStep] | None = None
     # worker のみ

@@ -61,6 +61,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 |---|---|---|---|
 | GET | `/api/health` | - | ヘルスチェック |
 | GET | `/api/users/demo` | - | デモユーザー一覧（画面切替用） |
+| GET | `/api/users/{userId}/public` | both | 公開プロフィール（閲覧用） |
 | POST | `/api/tasks` | client | 依頼作成＋AI審査（同期） |
 | POST | `/api/tasks/{taskId}/resubmit` | client | 補足情報を追記して再審査 |
 | GET | `/api/tasks` | client | 自分の依頼一覧 |
@@ -199,7 +200,20 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 ロールによって返す内容を変える。
 
-**共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[]
+**共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[], requester
+
+`requester` は依頼者の要約。画面⑤から公開プロフィール（3.4.1）へ遷移するために使う。
+クライアント自身が見た場合も同じ形で返す（出し分けはしない）。
+
+```json
+"requester": {
+  "id": "uuid",
+  "displayName": "デモ株式会社",
+  "avatarUrl": null,
+  "publishedTaskCount": 12,
+  "completionRate": 0.75
+}
+```
 
 **client のとき追加**: `timeline`（画面③の進行状況タイムライン）
 ```json
@@ -216,6 +230,50 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 **worker のとき追加**: `distanceKm`（クエリ `lat`/`lng` があれば計算）、`myAssignment`（自分の受注状況。無ければ null）
 
 > **ワーカーには他ワーカーの提出画像を返さない。**
+
+---
+
+### 3.4.1 `GET /api/users/{userId}/public` — 公開プロフィール（閲覧用）
+
+画面⑤の依頼者行から遷移する閲覧専用ページ用。**ロールの制約はなく、誰でも誰でも参照できる**
+（1アカウントが依頼者とワーカーの両面を持ちうる）。認証は必要。
+
+**レスポンス `200`**
+
+```json
+{
+  "id": "uuid",
+  "displayName": "デモ株式会社",
+  "avatarUrl": null,
+  "joinedAt": "2026-08-01T00:00:00+09:00",
+  "asRequester": {
+    "publishedTaskCount": 12,
+    "completedTaskCount": 9,
+    "completionRate": 0.75
+  },
+  "asWorker": {
+    "trustScore": 4.6,
+    "approvedSubmissionCount": 8
+  }
+}
+```
+
+- `404 USER_NOT_FOUND`: 存在しないユーザー
+- `asRequester.completionRate` は母数0のとき `null`
+- `asWorker.trustScore` は5段階へ換算した値（`trust_score / 20`）
+- 実績が0の側も省略せず返す（表示側で空状態を出す）
+
+**公開してはならない項目**（実装は `app/services/user_service.py` に集約する）
+
+| 項目 | 理由 |
+|---|---|
+| `email` / `login_id` | 個人情報・認証情報 |
+| 却下（`rejected`）・審査中（`screening`）・情報補足待ち（`needs_info`）の依頼 | 却下件数が見えると「危険な依頼を出した人」と特定でき名誉に関わる。未公開の下書き相当 |
+| 平均報酬 | 依頼者にとって相場を見られる不利がある（値下げ圧力・相場の固定化） |
+| 依頼の本文・位置情報 | 個別の依頼詳細で足りる。プロフィールで束ねると行動追跡に使える |
+
+統計の母数は**一度でも公開された依頼**、すなわち
+`status IN ('open','in_progress','completed','expired','cancelled')`。
 
 ---
 

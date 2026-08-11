@@ -35,6 +35,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isCapture = pathname?.endsWith("/capture") ?? false;
   const isWorker = pathname?.startsWith("/worker") ?? false;
   const isTop = pathname === "/";
+  //: 公開プロフィールはロールに属さない画面なので、役割ラベルを出さない
+  const isRoleNeutral = pathname?.startsWith("/users") ?? false;
 
   if (isCapture) {
     return <>{children}</>;
@@ -57,9 +59,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
             <Link href={isWorker ? "/worker/tasks" : "/client/tasks"} className="leading-tight">
               <span className="block text-sm font-bold text-slate-800">SpotCheck AI</span>
-              <span className={`block text-[10px] font-bold ${accent}`}>
-                {isWorker ? "ワーカー" : "クライアント"}
-              </span>
+              {!isRoleNeutral && (
+                <span className={`block text-[10px] font-bold ${accent}`}>
+                  {isWorker ? "ワーカー" : "クライアント"}
+                </span>
+              )}
             </Link>
           </div>
           <Link

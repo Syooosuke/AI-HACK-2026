@@ -2,6 +2,7 @@
 
 /** 画面⑤ 依頼詳細・受注（docs/05-frontend.md 画面⑤）。 */
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -84,6 +85,40 @@ export default function WorkerTaskDetailPage() {
           {task.description}
         </p>
       </Card>
+
+      {task.requester && (
+        <Link
+          href={`/users/${task.requester.id}`}
+          className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:bg-slate-50"
+        >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-lg">
+              {task.requester.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={task.requester.avatarUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                "👤"
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-bold text-slate-500">依頼者</span>
+              <span className="block truncate text-sm font-bold text-slate-800">
+                {task.requester.displayName}
+              </span>
+              <span className="block text-xs text-slate-500">
+                {task.requester.completionRate == null
+                  ? "依頼実績なし"
+                  : `完了率 ${Math.round(task.requester.completionRate * 100)}%・依頼${task.requester.publishedTaskCount}件`}
+              </span>
+            </span>
+          <span aria-hidden className="text-slate-300">
+            ›
+          </span>
+        </Link>
+      )}
 
       {task.referenceImages.length > 0 && (
         <Card>

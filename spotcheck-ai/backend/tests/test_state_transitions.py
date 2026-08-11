@@ -18,7 +18,7 @@ from app.core.db import get_session_factory
 from app.core.exceptions import AppError, Conflict
 from app.models import AssignmentStatus, Submission, TaskStatus, User, ValidationStatus
 from app.repositories import assignment_repo, submission_repo
-from app.services import submission_pipeline, task_service
+from app.services import masking, submission_pipeline, task_service
 from tests.conftest import make_assignment, make_task, store_raw_image
 
 
@@ -106,8 +106,16 @@ def _submit_and_validate(session: Session, *, task, assignment, worker: User) ->
     return submission
 
 
-def test_retake_loop_first_reject_then_approve(session: Session, users: dict[str, User]) -> None:
+def test_retake_loop_first_reject_then_approve(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """スタブは奇数回目を不合格にするため、1回目不合格 → 2回目合格になる。"""
+    # YOLOの重みは .gitignore 対象で、クローン直後やワークツリーには存在しない。
+    # 重みの有無でマスキングの skipped が変わりテストが環境依存になるため、
+    # 検出器を差し替えて「重みはあるが検出0件」の状態に固定する。
+    monkeypatch.setattr(masking, "load_models", lambda: masking._Models("general", "face", None))
+    monkeypatch.setattr(masking, "_detect", lambda *_args, **_kwargs: [])
+
     task = make_task(session, client=users["client"])
     assignment = make_assignment(session, task=task, worker=users["worker"])
 
