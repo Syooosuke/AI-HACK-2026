@@ -91,20 +91,22 @@ deploy_frontend() {
   export NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT="${NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT:-35.6595}"
   export NEXT_PUBLIC_DEFAULT_MAP_CENTER_LNG="${NEXT_PUBLIC_DEFAULT_MAP_CENTER_LNG:-139.7005}"
 
-  local build_env_file="$WORK_DIR/frontend-build-env.yaml"
-  write_env_file "$build_env_file" \
-    NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_GOOGLE_MAPS_API_KEY \
-    NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT NEXT_PUBLIC_DEFAULT_MAP_CENTER_LNG
+  # NEXT_PUBLIC_* は Docker の build-arg として渡す必要があるため、専用のビルド定義を使う
+  local image="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${FRONTEND_SERVICE}:latest"
+  echo "=== フロントエンドをビルドします（APIの向き先: ${BACKEND_URL}）==="
+  gcloud builds submit frontend \
+    --config frontend/cloudbuild.yaml \
+    --quiet \
+    --substitutions "_IMAGE=${image},_API_BASE_URL=${BACKEND_URL},_MAPS_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-},_LAT=${NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT},_LNG=${NEXT_PUBLIC_DEFAULT_MAP_CENTER_LNG}"
 
-  echo "=== フロントエンドをデプロイします（APIの向き先: ${BACKEND_URL}）==="
+  echo "=== フロントエンドをデプロイします ==="
   gcloud run deploy "$FRONTEND_SERVICE" \
-    --source frontend \
+    --image "$image" \
     --quiet \
     --region "$REGION" \
     --allow-unauthenticated \
     --memory 1Gi \
-    --min-instances "${FRONTEND_MIN_INSTANCES:-0}" \
-    --build-env-vars-file "$build_env_file"
+    --min-instances "${FRONTEND_MIN_INSTANCES:-0}"
 
   FRONTEND_URL=$(gcloud run services describe "$FRONTEND_SERVICE" --region "$REGION" --format='value(status.url)')
   echo "フロントエンド: $FRONTEND_URL"

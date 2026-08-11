@@ -92,8 +92,26 @@ cd spotcheck-ai
 ./deploy/deploy.sh frontend   # フロントのみ
 ```
 
-- バックエンドは PyTorch を含むため、**初回ビルドに10分前後**かかる
+- バックエンドは PyTorch を含むため、**初回ビルドに10分前後**かかる（CPU版に固定してイメージは約2.3GB）
 - フロントは `NEXT_PUBLIC_*` を**ビルド時に埋め込む**ため、APIのURLや地図キーを変えたら再デプロイが必要
+
+### 4.0 実装上の注意（つまずいた点）
+
+| 問題 | 対処 |
+|---|---|
+| `--set-env-vars` が `DATABASE_URL` の `@` と衝突して構文エラー | 環境変数は **YAMLファイル**（`--env-vars-file`）で渡す |
+| Artifact Registry 作成の確認プロンプトで停止 | `--quiet` を付ける |
+| `$VAR）` のように直後が全角括弧だと変数名を誤認 | `${VAR}` で囲む |
+| **`--build-env-vars` は Docker の `--build-arg` に渡らない** | `frontend/cloudbuild.yaml` を用意し、`gcloud builds submit` で `--build-arg` として渡してから `gcloud run deploy --image` する |
+
+最後の点は特に分かりにくい。渡らないと `NEXT_PUBLIC_*` が**空文字で埋め込まれ**、
+APIの呼び先が同一オリジンになり（Next側に該当APIは無いので404）、地図キーも消える。
+デプロイ後は必ず**JSバンドルにURLとキーが入っているか**を確認する。
+
+```bash
+curl -s https://<フロントのURL>/login | grep -o '/_next/static/chunks/[^"]*\.js' | head -5
+# 出てきたチャンクを取得し、バックエンドのURLと "AIza" が含まれることを確認する
+```
 
 ### 4.1 デプロイ後に必ずやること
 
@@ -109,6 +127,20 @@ gcloud run services update spotcheck-backend --region asia-northeast1 \
 ---
 
 ## 5. 確認
+
+### 5.1 実際のデプロイ結果（2026-08-12）
+
+| サービス | URL |
+|---|---|
+| フロントエンド | https://spotcheck-frontend-dathtekrwq-an.a.run.app |
+| バックエンド | https://spotcheck-backend-dathtekrwq-an.a.run.app |
+
+- プロジェクト: `gmp-demo-project-770876903`（課金が有効なプロジェクト）
+- リージョン: `asia-northeast1`
+- DB: Supabase PostgreSQL 17.6（`aws-0-ap-northeast-2.pooler.supabase.com:6543`）
+- 画面6種すべて200、ログイン・投稿一覧4件・サムネイル配信（99KB）を確認
+
+### 5.2 確認手順
 
 ```bash
 curl -s https://spotcheck-backend-xxxx.run.app/api/health | python3 -m json.tool

@@ -1,0 +1,29 @@
+# フロントエンドのイメージを Cloud Build でビルドする定義。
+#
+# Next.js の `NEXT_PUBLIC_*` は**ビルド時にJSへ焼き込まれる**ため、
+# Docker の `--build-arg` として渡す必要がある。
+# `gcloud run deploy --source` に付ける `--build-env-vars` はビルドコンテナの環境変数にしかならず、
+# `--build-arg` には渡らない（渡らないと空文字が埋め込まれ、APIのURLと地図キーが消える）。
+#
+# 呼び出し例:
+#   gcloud builds submit frontend --config frontend/cloudbuild.yaml \
+#     --substitutions=_IMAGE=...,_API_BASE_URL=...,_MAPS_KEY=...,_LAT=35.6595,_LNG=139.7005
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=$_IMAGE
+      - --build-arg=NEXT_PUBLIC_API_BASE_URL=$_API_BASE_URL
+      - --build-arg=NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$_MAPS_KEY
+      - --build-arg=NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT=$_LAT
+      - --build-arg=NEXT_PUBLIC_DEFAULT_MAP_CENTER_LNG=$_LNG
+      - .
+
+images:
+  - $_IMAGE
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1800s
