@@ -1,13 +1,18 @@
 "use client";
 
 /**
- * 地点ピッカー（画面①）。地図をタップしてピンを置く。
+ * 地点ピッカー（依頼作成）。地名・住所での検索、地図タップ、ストリートビューに対応する。
+ *
+ * 地図だけでは「どこにピンを置けばよいか」が分かりにくいため、実景（ストリートビュー）でも
+ * 確認できるようにし、見えている場所をそのまま撮影地点として採用できるようにしている。
  * APIキー未設定・読み込み失敗時は緯度経度の手入力フォームへフォールバックする。
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { useGoogleMaps } from "@/components/map/useGoogleMaps";
+import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
+import { StreetViewPanel } from "@/components/map/StreetViewPanel";
+import { MAPS_AUTH_ERROR_MESSAGE, useGoogleMaps } from "@/components/map/useGoogleMaps";
 import { env } from "@/lib/env";
 import { formatCoords } from "@/lib/geo";
 import type { GMap, GMarker } from "@/types/google-maps";
@@ -18,6 +23,9 @@ export type PickedLocation = {
   address: string | null;
 };
 
+/** 検索で地点を選んだときの拡大率（周辺が分かる程度に寄せる）。 */
+const SEARCH_ZOOM = 17;
+
 export function LocationPicker({
   value,
   onChange,
@@ -26,6 +34,7 @@ export function LocationPicker({
   onChange: (next: PickedLocation) => void;
 }) {
   const status = useGoogleMaps();
+  const [tab, setTab] = useState<"map" | "street">("map");
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GMap | null>(null);
   const markerRef = useRef<GMarker | null>(null);
@@ -64,12 +73,69 @@ export function LocationPicker({
     markerRef.current = marker;
   }, [status, value.lat, value.lng]);
 
+  /** 検索結果の地点へ地図とピンを移動する。 */
+  const applySearch = (place: SearchedPlace) => {
+    const position = { lat: place.lat, lng: place.lng };
+    mapRef.current?.setCenter(position);
+    mapRef.current?.setZoom(SEARCH_ZOOM);
+    markerRef.current?.setPosition(position);
+    onChangeRef.current({ ...position, address: place.address });
+  };
+
+  /** ストリートビューで移動した位置をピンとして採用する。 */
+  const adoptStreetViewPosition = (position: { lat: number; lng: number }) => {
+    mapRef.current?.setCenter(position);
+    markerRef.current?.setPosition(position);
+    onChangeRef.current({ ...position, address: null });
+
+    // 住所は逆ジオコーディングで補完する（失敗しても座標だけで進める）
+    const maps = window.google?.maps;
+    if (!maps) return;
+    new maps.Geocoder().geocode({ location: position, language: "ja" }, (results, geocodeStatus) => {
+      if (geocodeStatus === "OK" && results?.[0]) {
+        onChangeRef.current({ ...position, address: results[0].formatted_address });
+      }
+    });
+  };
+
   if (status === "ready") {
     return (
       <div className="space-y-2">
-        <div ref={containerRef} className="h-56 w-full overflow-hidden rounded-xl bg-slate-200" />
+        <PlaceSearchBox onSelect={applySearch} />
+
+        {/* 地図とストリートビューを切り替える。地図は非表示でも破棄しない
+            （Google Maps は要素を再利用する必要があるため hidden で残す） */}
+        <div className="flex rounded-xl bg-slate-100 p-1">
+          {(["map", "street"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
+                tab === key ? "bg-white text-client shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {key === "map" ? "地図" : "ストリートビュー"}
+            </button>
+          ))}
+        </div>
+
+        <div className={tab === "map" ? "" : "hidden"}>
+          <div
+            ref={containerRef}
+            className="h-56 w-full overflow-hidden rounded-xl bg-slate-200 md:h-72"
+          />
+        </div>
+        {tab === "street" && (
+          <StreetViewPanel
+            position={{ lat: value.lat, lng: value.lng }}
+            onAdopt={adoptStreetViewPosition}
+          />
+        )}
+
         <p className="text-xs text-slate-500">
-          地図をタップしてピンを移動できます — {formatCoords(value.lat, value.lng)}
+          検索・地図のタップ・ストリートビューのいずれでもピンを決められます —{" "}
+          {formatCoords(value.lat, value.lng)}
         </p>
         {value.address && <p className="text-xs text-slate-600">{value.address}</p>}
       </div>
@@ -79,15 +145,24 @@ export function LocationPicker({
   return (
     <div className="space-y-3">
       {status === "loading" ? (
-        <div className="flex h-56 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-500">
+        <div className="flex h-56 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-500 md:h-72">
           地図を読み込んでいます…
         </div>
       ) : (
         <div className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-          {status === "error"
-            ? "地図を読み込めませんでした。緯度経度を直接入力してください。"
-            : "地図APIキーが未設定のため、緯度経度を直接入力してください。"}
-          <span className="ml-1 font-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</span>
+          {status === "error" ? (
+            <>
+              {MAPS_AUTH_ERROR_MESSAGE}
+              <span className="mt-1 block">
+                地図が使えないあいだは、下の緯度経度を直接入力して依頼を作成できます。
+              </span>
+            </>
+          ) : (
+            <>
+              地図APIキーが未設定のため、緯度経度を直接入力してください。
+              <span className="ml-1 font-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</span>
+            </>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">

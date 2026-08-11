@@ -19,7 +19,7 @@ from app.models import AssignmentStatus, Submission, Task, User, ValidationStatu
 from app.repositories import submission_repo
 from app.services import submission_pipeline, submission_service
 from app.services.orca_client import OrcaClient
-from tests.conftest import make_assignment, make_task, store_raw_image
+from tests.conftest import auth_headers, make_assignment, make_task, store_raw_image
 
 BASE_LAT, BASE_LNG = 35.6595, 139.7005
 
@@ -153,7 +153,7 @@ def test_legacy_fixed_summary_is_regenerated_when_results_are_opened(
     with TestClient(app) as api:
         response = api.get(
             f"/api/tasks/{task.id}/results",
-            headers={"X-Demo-User-Id": str(users["client"].id)},
+            headers=auth_headers(users["client"]),
         )
 
     assert response.status_code == 200
@@ -312,8 +312,8 @@ def test_client_api_never_exposes_the_raw_bucket(
     assert submission.ai_validation_status is ValidationStatus.APPROVED
     settings = get_settings()
 
-    client_headers = {"X-Demo-User-Id": str(users["client"].id)}
-    worker_headers = {"X-Demo-User-Id": str(users["worker"].id)}
+    client_headers = auth_headers(users["client"])
+    worker_headers = auth_headers(users["worker"])
     with TestClient(app) as api:
         bodies = [
             api.get(f"/api/tasks/{submission.task_id}/results", headers=client_headers).text,
@@ -338,7 +338,7 @@ def test_local_processed_image_is_served_but_raw_image_is_forbidden(
 
     submission = submit_and_validate(session, users, monkeypatch, vlm=vlm_output())
     settings = get_settings()
-    headers = {"X-Demo-User-Id": str(users["client"].id)}
+    headers = auth_headers(users["client"])
 
     with TestClient(app) as api:
         result = api.get(f"/api/tasks/{submission.task_id}/results", headers=headers).json()

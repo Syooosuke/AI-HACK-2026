@@ -38,7 +38,7 @@ Phase 6  仕上げ（期限ジョブ・決済スタブ・エラー処理）
 1. `docs/02-database.md` のENUM・全テーブルを Alembic マイグレーションで作成。
 2. SQLAlchemyモデル、Pydanticスキーマ、リポジトリ層を実装。
 3. `scripts/seed_demo_users.py` でデモユーザー4名を投入。
-4. `X-Demo-User-Id` によるユーザー解決（`deps.py`）と `GET /api/users/demo` を実装。
+4. ログインID＋パスワードによる認証（`/api/auth/*`）と、トークンからのユーザー解決（`deps.py`）を実装。
 5. `docs/03-api.md` の全エンドポイントを実装。**ただしAI処理は `OrcaClient` のスタブモードを使う。**
 6. ステータス遷移ロジック、受注時の `SELECT FOR UPDATE`、再撮影ループのカウントを実装。
 7. 画像アップロードとStorage保存、署名URL発行を実装。
@@ -56,9 +56,9 @@ Phase 6  仕上げ（期限ジョブ・決済スタブ・エラー処理）
 
 **作業**
 1. デザイントークン設定、共通UIコンポーネント作成。
-2. トップのデモユーザー切替と `X-Demo-User-Id` 自動付与。
+2. ログイン・新規登録画面と、`Authorization: Bearer` の自動付与（`lib/session.ts` / `lib/api/client.ts`）。
 3. 画面①〜⑩をすべて実装（`docs/05-frontend.md`）。
-4. Google Maps 連携（地点ピッカー、近傍タスクのマーカー表示）。
+4. Google Maps 連携（地点ピッカー、近傍タスクのマーカー表示、地名・住所での検索）。
 5. **画面⑥のカメラ実装**（`getUserMedia` ＋ `watchPosition`、メタデータ同時送信）。
 6. ポーリングによる検品状況の更新。
 

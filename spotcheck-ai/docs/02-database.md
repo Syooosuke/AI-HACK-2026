@@ -8,7 +8,6 @@ DB: PostgreSQL (Supabase)。マイグレーションは Alembic で管理する�
 ## 1. ENUM定義
 
 ```sql
-CREATE TYPE user_role          AS ENUM ('client', 'worker');
 CREATE TYPE task_status        AS ENUM ('screening', 'rejected', 'needs_info', 'open', 'in_progress', 'completed', 'expired', 'cancelled');
 CREATE TYPE assignment_status  AS ENUM ('accepted', 'submitted', 'approved', 'failed', 'cancelled', 'expired');
 CREATE TYPE validation_status  AS ENUM ('pending', 'processing', 'approved', 'rejected', 'error');
@@ -22,15 +21,17 @@ CREATE TYPE payment_status     AS ENUM ('stub_pending', 'stub_succeeded', 'stub_
 
 ### 2.1 users
 
-デモ用の固定ユーザーをシードして使う（D-06）。1ユーザーは1ロールを持つ。
+ログインID＋パスワードで認証する（D-06）。**ロールは持たない**。
+1つのアカウントで「依頼する」「撮影する」の両方を行える。
 
 | カラム | 型 | 制約 | 説明 |
 |---|---|---|---|
 | id | uuid | PK | |
-| role | user_role | NOT NULL | client / worker |
-| display_name | text | NOT NULL | 表示名 |
-| email | text | UNIQUE | デモ用のダミーで可 |
-| trust_score | numeric(4,1) | NOT NULL DEFAULT 50.0 | 0〜100。ワーカーの信頼度 |
+| login_id | text | NOT NULL UNIQUE | ログインID。半角英数字とアンダースコア3〜32文字 |
+| password_hash | text | NOT NULL | bcrypt ハッシュ。平文は保存しない |
+| display_name | text | NOT NULL | 表示名（相手に見える名前） |
+| email | text | UNIQUE | 任意。デモ用のダミーで可 |
+| trust_score | numeric(4,1) | NOT NULL DEFAULT 50.0 | 0〜100。撮影者としての信頼度 |
 | completed_task_count | int | NOT NULL DEFAULT 0 | 承認された提出の累計 |
 | avatar_url | text | | |
 | created_at | timestamptz | NOT NULL DEFAULT now() | |
@@ -288,15 +289,50 @@ pending → processing → approved / rejected / error
 
 ---
 
+### 2.7 task_likes
+
+投稿（依頼）への「いいね」。1ユーザー×1依頼につき1行。取り消したら行を削除する。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| id | uuid | PK | |
+| user_id | uuid | FK→users.id ON DELETE CASCADE, NOT NULL | |
+| task_id | uuid | FK→tasks.id ON DELETE CASCADE, NOT NULL | |
+| created_at | timestamptz | NOT NULL DEFAULT now() | いいね欄の並び順に使う |
+
+- `UNIQUE (user_id, task_id)` … 二重いいねを防ぐ最後の守り
+- `INDEX (user_id, created_at DESC)` … いいね欄の一覧用
+- 件数は `tasks.like_count` に持たせる（一覧のN+1を避けるための非正規化）
+
+### 2.8 saved_searches
+
+いいね欄に並べる「保存した検索条件」。1ユーザー20件まで（アプリ側で制限）。
+
+| カラム | 型 | 制約 | 説明 |
+|---|---|---|---|
+| id | uuid | PK | |
+| user_id | uuid | FK→users.id ON DELETE CASCADE, NOT NULL | |
+| label | text | NOT NULL | 表示名。未指定時は住所と範囲から自動生成 |
+| center_lat / center_lng | double precision | NOT NULL | 検索の中心 |
+| location_address | text | | 検索に使った住所（表示用） |
+| radius_km | double precision | NOT NULL DEFAULT 5 | |
+| sort | text | NOT NULL DEFAULT 'distance' | distance / reward / deadline |
+| last_match_count | int | | 一覧を開いた時点の該当件数 |
+| created_at | timestamptz | NOT NULL DEFAULT now() | |
+
+---
+
 ## 4. シードデータ
 
 `backend/scripts/seed_demo_users.py` で以下を作成する。
 
-| role | display_name | 備考 |
+| login_id | display_name | 備考 |
 |---|---|---|
-| client | デモ株式会社 | 依頼作成に使用 |
-| worker | 山田 太郎 | trust_score 92.0、画面⑩の評価表示に対応 |
-| worker | 佐藤 花子 | trust_score 78.0 |
-| worker | 鈴木 一郎 | trust_score 55.0 |
+| demo_company | デモ株式会社 | 依頼作成に使用 |
+| yamada | 山田 太郎 | trust_score 92.0、画面⑩の評価表示に対応 |
+| sato | 佐藤 花子 | trust_score 78.0 |
+| suzuki | 鈴木 一郎 | trust_score 55.0 |
 
-固定UUIDを使い、フロントエンドの `demoUser.ts` からも同じIDを参照できるようにする。
+パスワードは全アカウント共通で `spotcheck123`（`DEMO_USER_PASSWORD` で変更可）。
+固定UUIDを使うため、何度実行しても同じユーザーになる。
+ロールは無いので、どのアカウントでも依頼の作成と受注の両方ができる。

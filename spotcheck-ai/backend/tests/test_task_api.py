@@ -21,7 +21,7 @@ from app.core.config import get_settings
 from app.main import app
 from app.models import User
 from app.services.orca_client import OrcaClient
-from tests.conftest import CLIENT_ID
+from tests.conftest import CLIENT_ID, auth_headers
 
 
 def llm_output(**overrides: Any) -> str:
@@ -88,7 +88,7 @@ def reference_image() -> bytes:
     return buffer.getvalue()
 
 
-HEADERS = {"X-Demo-User-Id": str(CLIENT_ID)}
+HEADERS = auth_headers(CLIENT_ID)
 
 
 def test_create_task_publishes_on_approval(
@@ -219,7 +219,7 @@ def test_rejected_task_is_not_published(
 
         nearby = client.get(
             "/api/tasks/nearby",
-            headers={"X-Demo-User-Id": str(users["worker"].id)},
+            headers=auth_headers(users["worker"]),
             params={"lat": 35.6595, "lng": 139.7005, "radiusKm": 5},
         )
     assert nearby.json()["tasks"] == []

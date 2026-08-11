@@ -69,6 +69,14 @@ class Task(Base):
     review_summary: Mapped[str | None] = mapped_column(Text)
     review_feedback: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     result_summary: Mapped[str | None] = mapped_column(Text)
+    #: 投稿一覧に出す正方形サムネイルの保存キー（配信用バケット）。未生成なら None
+    thumbnail_image_url: Mapped[str | None] = mapped_column(String)
+    #: サムネイルの由来: reference（参考画像）/ generated（AI生成）/ streetview / placeholder
+    thumbnail_source: Mapped[str | None] = mapped_column(String)
+    #: 詳細を開かれた回数。HOTタグの判定に使う
+    view_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    #: いいねの数。task_likes の集計値をここに持ち、一覧のN+1を避ける
+    like_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

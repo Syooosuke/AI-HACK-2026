@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.storage import get_storage
 from app.jobs import expire_tasks
 from app.models import (
     AssignmentStatus,
@@ -74,11 +75,15 @@ def test_unfinished_assignments_are_expired(session: Session, users: dict[str, U
     assert task.status is TaskStatus.EXPIRED
 
 
-def test_expired_task_disappears_from_worker_list(session: Session, users: dict[str, User]) -> None:
+async def test_expired_task_disappears_from_worker_list(
+    session: Session, users: dict[str, User]
+) -> None:
     """期限切れになったタスクはワーカー側の一覧から消える。"""
     task = make_task(session, client=users["client"])
-    found = task_service.find_nearby(
+    found = await task_service.find_nearby(
         session,
+        viewer=users["worker"],
+        storage=get_storage(),
         lat=task.location_lat,
         lng=task.location_lng,
         radius_km=5,
@@ -92,8 +97,10 @@ def test_expired_task_disappears_from_worker_list(session: Session, users: dict[
     session.commit()
 
     assert (
-        task_service.find_nearby(
+        await task_service.find_nearby(
             session,
+            viewer=users["worker"],
+            storage=get_storage(),
             lat=task.location_lat,
             lng=task.location_lng,
             radius_km=5,

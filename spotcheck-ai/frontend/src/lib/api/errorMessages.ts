@@ -7,8 +7,11 @@ import { ApiError } from "@/lib/api/client";
 
 const MESSAGES: Record<string, string> = {
   NETWORK_ERROR: "サーバーに接続できません。通信環境を確認してください。",
-  UNAUTHENTICATED: "デモユーザーが選択されていません。トップから選び直してください。",
-  FORBIDDEN: "この操作を行う権限がありません。ユーザーを切り替えてください。",
+  UNAUTHENTICATED: "ログインが必要です。もう一度ログインしてください。",
+  INVALID_CREDENTIALS: "ログインIDまたはパスワードが正しくありません。",
+  LOGIN_ID_TAKEN: "このログインIDは既に使われています。別のIDを入力してください。",
+  FORBIDDEN: "この操作を行う権限がありません。",
+  CANNOT_ACCEPT_OWN_TASK: "自分が出した依頼は受注できません。",
   NOT_FOUND: "対象が見つかりません。一覧から選び直してください。",
   HTTP_ERROR: "通信に失敗しました。もう一度お試しください。",
   TASK_NOT_FOUND: "依頼が見つかりません。一覧から選び直してください。",

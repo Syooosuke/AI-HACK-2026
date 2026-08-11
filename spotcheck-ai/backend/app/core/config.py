@@ -13,6 +13,10 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: JWT_SECRET 未設定時に開発環境だけで使う固定鍵。
+#: 固定値なので uvicorn の再起動を挟んでもログインが切れない（デモ時の利便性のため）。
+DEV_JWT_SECRET = "spotcheck-development-only-secret"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -29,6 +33,14 @@ class Settings(BaseSettings):
 
     # --- データベース ---
     database_url: str = "postgresql+psycopg://postgres:password@localhost:5432/spotcheck"
+
+    # --- 認証（ログインID＋パスワード / JWT）---
+    # 本番では必ず十分に長いランダム文字列を与える。未設定のまま production で起動すると失敗する。
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    # ネイティブアプリのように「一度ログインしたらしばらく維持される」挙動にするため長め
+    jwt_expire_days: int = 30
+    bcrypt_rounds: int = 12
 
     # --- Supabase / ストレージ ---
     supabase_url: str = ""
@@ -50,6 +62,24 @@ class Settings(BaseSettings):
     orca_timeout_seconds: int = 60
     orca_max_retries: int = 2
     orca_stub_mode: bool = False
+
+    # --- 投稿カードのタグ判定 ---
+    #: 作成からこの時間以内は NEW タグを出す
+    new_task_hours: int = 24
+    #: 詳細の閲覧数がこの値以上なら HOT タグを出す
+    hot_view_count: int = 20
+
+    # --- 投稿サムネイル ---
+    #: Street View Static API 用のサーバー側キー。フロントのキーとは分ける
+    #: （フロントのキーはリファラー制限がかかるためサーバーからは使えない）
+    google_maps_server_api_key: str = ""
+    #: サムネイルの一辺（正方形）
+    thumbnail_size: int = 640
+    #: 画像生成に使う OrcaRouter のルーター名。未設定ならストリートビュー画像をそのまま使う
+    #: TODO(human-decision): 画像生成のルーター名・エンドポイント形式が判明したら設定する
+    orca_router_image: str = ""
+    #: 画像生成のエンドポイント（OpenAI images 互換を想定）
+    orca_images_path: str = "/images/generations"
 
     # --- 判定パラメータ ---
     task_review_score_threshold: int = 70
@@ -99,6 +129,22 @@ class Settings(BaseSettings):
         if self.storage_backend == "auto":
             return "supabase" if self.supabase_configured else "local"
         return self.storage_backend
+
+    @property
+    def effective_jwt_secret(self) -> str:
+        """JWT の署名鍵。開発時に限り既定値へフォールバックする。
+
+        production で未設定の場合は、推測可能な鍵で運用されることを防ぐため例外を送出する。
+        """
+        if self.jwt_secret:
+            return self.jwt_secret
+        if self.app_env == "production":
+            raise RuntimeError("JWT_SECRET が未設定です。production では必ず設定してください。")
+        return DEV_JWT_SECRET
+
+    @property
+    def jwt_expire_seconds(self) -> int:
+        return self.jwt_expire_days * 24 * 60 * 60
 
     @property
     def orca_stub_enabled(self) -> bool:
@@ -157,6 +203,18 @@ def collect_config_warnings(settings: Settings) -> list[ConfigWarning]:
                 variables=("ORCA_STUB_MODE",),
                 feature="AI",
                 fallback="ORCA_STUB_MODE=true のため、APIキーがあってもスタブ応答を返します。",
+            )
+        )
+
+    if not settings.jwt_secret:
+        warnings.append(
+            ConfigWarning(
+                variables=("JWT_SECRET",),
+                feature="認証",
+                fallback=(
+                    "開発用の固定鍵でトークンを署名します（誰でも偽造できます）。"
+                    "本番相当の環境では必ず設定してください。"
+                ),
             )
         )
 

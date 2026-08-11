@@ -8,7 +8,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { useGoogleMaps } from "@/components/map/useGoogleMaps";
+import { MAPS_AUTH_ERROR_MESSAGE, useGoogleMaps } from "@/components/map/useGoogleMaps";
 import type { GMap, GMarker } from "@/types/google-maps";
 import type { NearbyTask } from "@/types/api";
 
@@ -79,22 +79,20 @@ export function TaskMarkers({
 
   if (status !== "ready") {
     return (
-      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl bg-slate-100 px-6 text-center text-sm text-slate-500">
+      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl bg-slate-100 px-6 text-center text-sm text-slate-500 md:h-96">
         {status === "loading" ? (
           "地図を読み込んでいます…"
         ) : (
           <>
-            <p>
-              {status === "error"
-                ? "地図を読み込めませんでした。"
-                : "地図APIキーが未設定です。"}
+            <p className="text-xs">
+              {status === "error" ? MAPS_AUTH_ERROR_MESSAGE : "地図APIキーが未設定です。"}
             </p>
-            <p className="text-xs">「リスト」タブから依頼を確認できます。</p>
+            <p className="text-xs">ホームのリストから依頼を確認できます。</p>
           </>
         )}
       </div>
     );
   }
 
-  return <div ref={containerRef} className="h-72 w-full overflow-hidden rounded-2xl bg-slate-200" />;
+  return <div ref={containerRef} className="h-72 w-full overflow-hidden rounded-2xl bg-slate-200 md:h-96" />;
 }

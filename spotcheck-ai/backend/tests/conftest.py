@@ -46,7 +46,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import get_engine, get_session_factory
-from app.models import Base, Task, TaskAssignment, User, UserRole
+from app.core.security import create_access_token, hash_password
+from app.models import Base, Task, TaskAssignment, User
 
 TABLES_IN_TRUNCATE_ORDER = (
     "payments",
@@ -61,6 +62,10 @@ TABLES_IN_TRUNCATE_ORDER = (
 CLIENT_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 WORKER_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 WORKER2_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
+
+#: テスト用の共通パスワード。ハッシュ化のコストを抑えるため使い回す。
+TEST_PASSWORD = "test-password"
+_TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -122,21 +127,31 @@ def session() -> Iterator[Session]:
 
 @pytest.fixture
 def users(session: Session) -> dict[str, User]:
-    """デモユーザー（クライアント1名・ワーカー2名）を投入する。"""
+    """テスト用ユーザーを投入する。
+
+    role は廃止したため、どのユーザーも依頼の作成と受注の両方ができる。
+    キー名（client / worker）はテスト内での役割の区別であって権限ではない。
+    """
     created = {
         "client": User(
-            id=CLIENT_ID, role=UserRole.CLIENT, display_name="デモ株式会社", email="c@example.com"
+            id=CLIENT_ID,
+            login_id="demo_company",
+            password_hash=_TEST_PASSWORD_HASH,
+            display_name="デモ株式会社",
+            email="c@example.com",
         ),
         "worker": User(
             id=WORKER_ID,
-            role=UserRole.WORKER,
+            login_id="yamada",
+            password_hash=_TEST_PASSWORD_HASH,
             display_name="山田 太郎",
             email="w1@example.com",
             trust_score=92,
         ),
         "worker2": User(
             id=WORKER2_ID,
-            role=UserRole.WORKER,
+            login_id="sato",
+            password_hash=_TEST_PASSWORD_HASH,
             display_name="佐藤 花子",
             email="w2@example.com",
             trust_score=78,
@@ -145,6 +160,12 @@ def users(session: Session) -> dict[str, User]:
     session.add_all(created.values())
     session.commit()
     return created
+
+
+def auth_headers(user: User | uuid.UUID) -> dict[str, str]:
+    """指定ユーザーとしてAPIを叩くための Authorization ヘッダーを作る。"""
+    user_id = user if isinstance(user, uuid.UUID) else user.id
+    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
 
 
 def make_task(
@@ -207,9 +228,11 @@ def store_raw_image(key: str, bucket: str | None = None) -> None:
 
 __all__ = [
     "CLIENT_ID",
+    "TEST_PASSWORD",
     "WORKER2_ID",
     "WORKER_ID",
     "Base",
+    "auth_headers",
     "make_assignment",
     "make_task",
     "store_raw_image",

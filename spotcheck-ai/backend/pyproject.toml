@@ -14,6 +14,9 @@ dependencies = [
     "httpx>=0.27",
     "pillow>=11.0",
     "python-multipart>=0.0.12",
+    # 認証（ログインID＋パスワード / JWT）
+    "bcrypt>=4.2",
+    "pyjwt>=2.9",
     "apscheduler>=3.10",
     # 顔・車両のローカル検出（D-09）。重みは models_weights/ に配置する（.gitignore対象）
     "ultralytics>=8.3",

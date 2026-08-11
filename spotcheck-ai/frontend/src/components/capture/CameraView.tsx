@@ -207,7 +207,7 @@ export function CameraView({
   // ---- プレビュー ----
   if (captured) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-black">
+      <div className="fixed inset-0 z-50 flex flex-col bg-black md:mx-auto md:max-w-app md:border-x md:border-slate-800">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={captured.previewUrl}
@@ -239,7 +239,7 @@ export function CameraView({
 
   // ---- カメラ（またはフォールバック） ----
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black">
+    <div className="fixed inset-0 z-50 flex flex-col bg-black md:mx-auto md:max-w-app md:border-x md:border-slate-800">
       <div className="relative min-h-0 flex-1">
         <video
           ref={videoRef}
