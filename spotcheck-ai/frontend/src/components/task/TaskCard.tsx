@@ -4,25 +4,20 @@
  * 投稿カード（ホーム・さがす・ハート欄で共通）。
  *
  * - 正方形のサムネイル。写真が無い依頼はサーバー側で生成した画像が入る
- * - 左下に報酬、左上に SOLD / NEW / HOT タグ、右上にハート
+ * - 左下に報酬、左上に SOLD / HOT / NEW タグ（角の三角形）、右上にハート
  * - カード全体をタップすると依頼主が入力した詳細へ移動する
  */
 
 import Link from "next/link";
 import { useState } from "react";
 
+import { CornerBadge } from "@/components/task/CornerBadge";
 import { resolveApiUrl } from "@/lib/api/client";
 import { toMessage } from "@/lib/api/errorMessages";
 import { likeTask, unlikeTask } from "@/lib/api/social";
 import { formatRemaining } from "@/lib/datetime";
 import { formatDistance } from "@/lib/geo";
-import type { NearbyTask, TaskBadge } from "@/types/api";
-
-const BADGE_STYLE: Record<TaskBadge, { label: string; className: string }> = {
-  sold: { label: "SOLD", className: "bg-slate-800 text-white" },
-  new: { label: "NEW", className: "bg-worker text-white" },
-  hot: { label: "HOT", className: "bg-fail text-white" },
-};
+import type { NearbyTask } from "@/types/api";
 
 export function TaskCard({
   task,
@@ -78,19 +73,8 @@ export function TaskCard({
             </div>
           )}
 
-          {/* 左上: タグ */}
-          {task.badges.length > 0 && (
-            <div className="absolute left-2 top-2 flex gap-1">
-              {task.badges.map((badge) => (
-                <span
-                  key={badge}
-                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${BADGE_STYLE[badge].className}`}
-                >
-                  {BADGE_STYLE[badge].label}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* 左上: 角を切り取る三角形のタグ（優先度が最も高い1つだけ） */}
+          <CornerBadge badges={task.badges} />
 
           {/* 右上: いいね */}
           {!task.isMine && (

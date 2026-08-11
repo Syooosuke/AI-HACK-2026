@@ -152,6 +152,21 @@ def test_sold_badge_replaces_new(session: Session, users: dict[str, User]) -> No
     assert task_card.build_badges(task) == ["sold"]
 
 
+def test_badges_are_ordered_by_priority(session: Session, users: dict[str, User]) -> None:
+    """カードの角には先頭の1つだけを出すため、順序が仕様になる（sold > hot > new）。"""
+    settings = get_settings()
+
+    hot_and_new = make_task(session, client=users["client"])
+    hot_and_new.view_count = settings.hot_view_count
+    session.commit()
+    assert task_card.build_badges(hot_and_new) == ["hot", "new"]
+
+    sold_and_hot = make_task(session, client=users["client"], status="completed")
+    sold_and_hot.view_count = settings.hot_view_count
+    session.commit()
+    assert task_card.build_badges(sold_and_hot) == ["sold", "hot"]
+
+
 # ----------------------------------------------------------------------
 # 保存した検索条件
 # ----------------------------------------------------------------------

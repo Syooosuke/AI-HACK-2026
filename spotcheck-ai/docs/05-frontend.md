@@ -278,7 +278,7 @@ GUI草案の画面①〜⑩をすべて実装する。**画面番号は草案に
 | 位置 | 内容 |
 |---|---|
 | 全面 | **正方形のサムネイル**（`thumbnailUrl`）。`aspect-square` ＋ `object-cover` |
-| 左上 | タグ。`badges` の順に並べる |
+| 左上 | タグ。**角を切り取る三角形**の中に白文字（`components/task/CornerBadge.tsx`）。`badges` の先頭1つだけ |
 | 右上 | ハート（いいね）。自分の依頼（`isMine`）では出さない |
 | 左下 | 報酬（`¥2,500`） |
 | 下部 | タイトル（2行まで）、距離・残り時間・残り枠 |
@@ -289,11 +289,16 @@ GUI草案の画面①〜⑩をすべて実装する。**画面番号は草案に
 
 **タグの意味**（判定はサーバー側。`app/services/task_card.py`）
 
-| badge | 表示 | 条件 |
-|---|---|---|
-| `sold` | SOLD（濃いグレー） | 取引終了（`status = completed`） |
-| `new` | NEW（緑） | 作成から24時間以内（`NEW_TASK_HOURS`）。SOLD のときは付けない |
-| `hot` | HOT（赤） | 詳細の閲覧数が20以上（`HOT_VIEW_COUNT`） |
+`badges` は**優先順位の高い順**に並ぶ。角は1つしか使えないため、カードは先頭だけを描く。
+
+| 優先 | badge | 表示 | 条件 |
+|---|---|---|---|
+| 1 | `sold` | SOLD（濃いグレー） | 取引終了（`status = completed`） |
+| 2 | `hot` | HOT（赤） | 詳細の閲覧数が20以上（`HOT_VIEW_COUNT`） |
+| 3 | `new` | NEW（緑） | 作成から24時間以内（`NEW_TASK_HOURS`）。SOLD のときは付けない |
+
+三角形は CSS の border で作る（`border-top` を塗り `border-right` を透明にすると左上の直角三角形になる）。
+文字は `-rotate-45` で斜辺と平行に置き、三角形の重心へ寄せる。詳細画面は `size="lg"` で同じ意匠を使う。
 
 **サムネイルの由来**（`thumbnailSource`）
 
@@ -302,7 +307,9 @@ GUI草案の画面①〜⑩をすべて実装する。**画面番号は草案に
 | `reference` | 依頼と一緒にアップロードされた参考画像の1枚目 |
 | `generated` | ストリートビューを元にAIが生成した画像 |
 | `streetview` | ストリートビュー画像をそのまま正方形に切り抜いたもの |
-| `placeholder` | 外部APIが使えないときにサーバーが描いた画像 |
+| `placeholder` | 外部APIが使えないときにサーバーが描いた画像（地点ピン＋タイトル＋住所） |
+
+サムネイルの意匠を変えたときは `python -m scripts.regenerate_thumbnails --force` で作り直す。
 
 ---
 

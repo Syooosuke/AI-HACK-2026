@@ -274,7 +274,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 |---|---|
 | `thumbnailUrl` | 正方形サムネイルの配信URL。生成前は `null` |
 | `thumbnailSource` | `reference` / `generated` / `streetview` / `placeholder` |
-| `badges` | `sold`（取引終了）/ `new`（24時間以内）/ `hot`（閲覧20以上）の配列 |
+| `badges` | 優先順位の高い順の配列。`sold`（取引終了）> `hot`（閲覧20以上）> `new`（24時間以内）。カードは先頭1つだけを表示する |
 | `likeCount` `isLiked` | いいねの数と、自分が押しているか |
 | `viewCount` | 詳細を開かれた回数（オーナー自身の閲覧は数えない） |
 | `isMine` | 自分が出した依頼か。`true` のときハートは出さない |

@@ -8,6 +8,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { CornerBadge } from "@/components/task/CornerBadge";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
@@ -94,24 +95,7 @@ export default function WorkerTaskDetailPage() {
             alt={task.title}
             className="aspect-square w-full object-cover"
           />
-          {task.badges.length > 0 && (
-            <div className="absolute left-3 top-3 flex gap-1">
-              {task.badges.map((badge) => (
-                <span
-                  key={badge}
-                  className={`rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide ${
-                    badge === "sold"
-                      ? "bg-slate-800 text-white"
-                      : badge === "new"
-                        ? "bg-worker text-white"
-                        : "bg-fail text-white"
-                  }`}
-                >
-                  {badge.toUpperCase()}
-                </span>
-              ))}
-            </div>
-          )}
+          <CornerBadge badges={task.badges} size="lg" />
         </div>
       )}
 

@@ -89,16 +89,55 @@ def _load_font(size: int) -> tuple[ImageFont.ImageFont | ImageFont.FreeTypeFont,
     return ImageFont.load_default(), False
 
 
-def build_placeholder(task: Task, *, size: int) -> bytes:
-    """外部サービスに頼らないサムネイル。依頼の場所と報酬を描く。
+def _wrap(text: str, *, per_line: int, max_lines: int) -> list[str]:
+    """日本語は単語境界が無いため、文字数で折り返す。"""
+    lines = [text[i : i + per_line] for i in range(0, len(text), per_line)][:max_lines]
+    if lines and len(text) > per_line * max_lines:
+        lines[-1] = lines[-1][: max(1, per_line - 1)] + "…"
+    return lines
 
-    日本語フォントが見つからない環境では英数字のみで描く（豆腐を出さない）。
+
+def _draw_pin(draw: ImageDraw.ImageDraw, *, center_x: float, top: float, size: float) -> None:
+    """地点を示すピンのアイコンを描く（外部素材に依存しない）。"""
+    radius = size / 2
+    circle_center_y = top + radius
+    draw.ellipse(
+        [center_x - radius, top, center_x + radius, top + size],
+        outline=(255, 255, 255),
+        width=max(2, round(size / 12)),
+    )
+    draw.ellipse(
+        [
+            center_x - radius / 3,
+            circle_center_y - radius / 3,
+            center_x + radius / 3,
+            circle_center_y + radius / 3,
+        ],
+        fill=(255, 255, 255),
+    )
+    # ピンの先端
+    draw.polygon(
+        [
+            (center_x - radius * 0.5, circle_center_y + radius * 0.75),
+            (center_x + radius * 0.5, circle_center_y + radius * 0.75),
+            (center_x, circle_center_y + radius * 1.9),
+        ],
+        fill=(255, 255, 255),
+    )
+
+
+def build_placeholder(task: Task, *, size: int) -> bytes:
+    """外部サービスに頼らないサムネイル。依頼のタイトルと場所を描く。
+
+    カード上では左上にタグ、左下に報酬が重なるため、絵の要素は中央へ寄せる。
+    日本語フォントが見つからない環境ではタイトルを描かず、図形だけで成立させる
+    （豆腐を出さない）。
     """
     start, end = PLACEHOLDER_COLORS[task.id.int % len(PLACEHOLDER_COLORS)]
     image = Image.new("RGB", (size, size), start)
     draw = ImageDraw.Draw(image)
 
-    # 上下方向のグラデーション
+    # 背景: 上下方向のグラデーション
     for y in range(size):
         ratio = y / max(1, size - 1)
         draw.line(
@@ -106,25 +145,47 @@ def build_placeholder(task: Task, *, size: int) -> bytes:
             fill=tuple(round(s + (e - s) * ratio) for s, e in zip(start, end, strict=True)),
         )
 
-    # カメラを模した円（撮影依頼であることを示す）
-    center = size // 2
-    radius = size // 5
-    draw.ellipse(
-        [center - radius, center - radius * 1.1, center + radius, center + radius * 0.9],
-        outline=(255, 255, 255),
-        width=max(2, size // 100),
-    )
+    # 背景の装飾: 街路を思わせる斜線を薄く重ねる
+    overlay = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    step = max(24, size // 10)
+    for offset in range(-size, size * 2, step):
+        overlay_draw.line(
+            [(offset, 0), (offset + size, size)],
+            fill=(255, 255, 255, 18),
+            width=max(1, size // 160),
+        )
+    image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+    draw = ImageDraw.Draw(image)
 
-    reward_font, has_cjk = _load_font(max(18, size // 12))
-    small_font, _ = _load_font(max(12, size // 26))
+    _draw_pin(draw, center_x=size / 2, top=size * 0.2, size=size * 0.17)
 
-    margin = size * 0.07
-    reward = f"¥{task.reward_amount:,}" if has_cjk else f"{task.reward_amount} JPY"
-    draw.text((margin, size * 0.74), reward, fill=(255, 255, 255), font=reward_font)
+    title_font, has_cjk = _load_font(max(16, size // 16))
+    place_font, _ = _load_font(max(12, size // 26))
 
-    place = task.location_address if has_cjk else None
-    label = place or f"{task.location_lat:.4f}, {task.location_lng:.4f}"
-    draw.text((margin, size * 0.86), label[:32], fill=(255, 255, 255), font=small_font)
+    if has_cjk:
+        # タイトル（最大2行）
+        lines = _wrap(task.title, per_line=14, max_lines=2)
+        y = size * 0.5
+        for line in lines:
+            width = draw.textlength(line, font=title_font)
+            draw.text(((size - width) / 2, y), line, fill=(255, 255, 255), font=title_font)
+            y += size / 13
+
+        # 場所（1行）
+        place = task.location_address or f"{task.location_lat:.4f}, {task.location_lng:.4f}"
+        place_line = _wrap(place, per_line=22, max_lines=1)[0] if place else ""
+        width = draw.textlength(place_line, font=place_font)
+        draw.text(
+            ((size - width) / 2, size * 0.66),
+            place_line,
+            fill=(255, 255, 255, 220),
+            font=place_font,
+        )
+    else:
+        coords = f"{task.location_lat:.4f}, {task.location_lng:.4f}"
+        width = draw.textlength(coords, font=place_font)
+        draw.text(((size - width) / 2, size * 0.55), coords, fill=(255, 255, 255), font=place_font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=JPEG_QUALITY)
@@ -231,8 +292,11 @@ async def build_thumbnail(
     return key, origin
 
 
-async def generate_for_task(task_id: uuid.UUID) -> None:
-    """BackgroundTasks から呼ぶ入口。依頼のサムネイルを作って保存する。"""
+async def generate_for_task(task_id: uuid.UUID, *, force: bool = False) -> None:
+    """BackgroundTasks から呼ぶ入口。依頼のサムネイルを作って保存する。
+
+    `force=True` のときは既存のサムネイルを作り直す（意匠を変えたときの再生成用）。
+    """
     factory = get_session_factory()
     with factory() as session:
         task = task_repo.get(session, task_id)
@@ -241,7 +305,7 @@ async def generate_for_task(task_id: uuid.UUID) -> None:
                 "サムネイル生成対象の依頼が見つかりません", extra={"task_id": str(task_id)}
             )
             return
-        if task.thumbnail_image_url:
+        if task.thumbnail_image_url and not force:
             return  # すでに生成済み
 
         try:

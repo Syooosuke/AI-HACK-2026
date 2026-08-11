@@ -26,11 +26,14 @@ SOLD_STATUSES = (TaskStatus.COMPLETED,)
 
 
 def build_badges(task: Task, *, now: datetime | None = None) -> list[TaskBadge]:
-    """投稿カードの左上に出すタグを決める。
+    """投稿カードの左上に出すタグを、**優先順位の高い順**に並べて返す。
+
+    優先順位は sold > hot > new。カードの角には先頭の1つだけを表示するため、
+    並び順そのものが仕様になる。
 
     - sold: 取引終了（完了済み）
-    - new: 作成から `NEW_TASK_HOURS` 以内
     - hot: 詳細の閲覧数が `HOT_VIEW_COUNT` 以上
+    - new: 作成から `NEW_TASK_HOURS` 以内
     """
     settings = get_settings()
     current = now or datetime.now(UTC)
@@ -38,12 +41,15 @@ def build_badges(task: Task, *, now: datetime | None = None) -> list[TaskBadge]:
 
     if task.status in SOLD_STATUSES:
         badges.append("sold")
-    elif task.created_at >= current - timedelta(hours=settings.new_task_hours):
-        # 取引終了済みに NEW は出さない（古い募集に見えないようにする）
-        badges.append("new")
 
     if task.view_count >= settings.hot_view_count:
         badges.append("hot")
+
+    # 取引終了済みに NEW は出さない（古い募集に見えないようにする）
+    if task.status not in SOLD_STATUSES and task.created_at >= current - timedelta(
+        hours=settings.new_task_hours
+    ):
+        badges.append("new")
     return badges
 
 
