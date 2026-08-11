@@ -1,52 +1,68 @@
 "use client";
 
 /**
- * 共通シェル（docs/05-frontend.md 1節・2節）。
- * - ヘッダー右上に現在のデモユーザーを表示し、タップでトップの切替画面へ戻す
- * - ワーカー側のみ下部固定タブバーを表示する
- * - 画面⑥（撮影）は全画面カメラのため、シェルを外して children だけを描画する
+ * 共通シェル。
+ * - ログイン後は全員が同じ画面構成を使う（クライアント／ワーカーの区別なし）
+ * - 下部タブ: ホーム / さがす / 依頼する（中央） / お知らせ / マイページ
+ * - 撮影画面は全画面カメラのため、シェルを外して children だけを描画する
+ * - ログイン・新規登録画面ではヘッダーとタブを出さない
  */
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { getDemoUser, subscribeDemoUser } from "@/lib/demoUser";
-import type { DemoUser } from "@/types/api";
+import { isPublicPath } from "@/components/auth/AuthGuard";
+import { getCurrentUser, subscribeSession } from "@/lib/session";
+import type { AuthUser } from "@/types/api";
 
-const WORKER_TABS = [
-  { href: "/worker/tasks", label: "ホーム", icon: "🏠" },
-  { href: "/worker/assignments", label: "依頼", icon: "📋" },
-  { href: "/worker/messages", label: "メッセージ", icon: "💬" },
-  { href: "/worker/me", label: "マイページ", icon: "👤" },
+type Tab = {
+  href: string;
+  label: string;
+  icon: string;
+  /** 中央の目立つボタン（依頼する）。 */
+  primary?: boolean;
+};
+
+const TABS: Tab[] = [
+  { href: "/home", label: "ホーム", icon: "🏠" },
+  { href: "/search", label: "さがす", icon: "🔍" },
+  { href: "/requests/new", label: "依頼する", icon: "📸", primary: true },
+  { href: "/notifications", label: "お知らせ", icon: "🔔" },
+  { href: "/me", label: "マイページ", icon: "👤" },
 ];
+
+/** 戻るボタンを出さない画面（タブの着地点）。 */
+const TAB_ROOTS = TABS.map((tab) => tab.href);
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<DemoUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    const sync = () => setUser(getDemoUser());
+    const sync = () => setUser(getCurrentUser());
     sync();
-    return subscribeDemoUser(sync);
+    return subscribeSession(sync);
   }, []);
 
   const isCapture = pathname?.endsWith("/capture") ?? false;
-  const isWorker = pathname?.startsWith("/worker") ?? false;
-  const isTop = pathname === "/";
+  const isAuthPage = isPublicPath(pathname);
+  const isTabRoot = pathname ? TAB_ROOTS.includes(pathname) : false;
 
   if (isCapture) {
     return <>{children}</>;
   }
 
-  const accent = isWorker ? "text-worker" : "text-client";
+  if (isAuthPage) {
+    return <div className="mx-auto flex min-h-screen max-w-app flex-col px-4">{children}</div>;
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-app flex-col">
-      {!isTop && (
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-          <div className="flex items-center gap-2">
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="flex items-center gap-2">
+          {!isTabRoot && (
             <button
               type="button"
               onClick={() => router.back()}
@@ -55,46 +71,57 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               ←
             </button>
-            <Link href={isWorker ? "/worker/tasks" : "/client/tasks"} className="leading-tight">
-              <span className="block text-sm font-bold text-slate-800">SpotCheck AI</span>
-              <span className={`block text-[10px] font-bold ${accent}`}>
-                {isWorker ? "ワーカー" : "クライアント"}
-              </span>
-            </Link>
-          </div>
-          <Link
-            href="/"
-            className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-          >
-            <span className="max-w-[8rem] truncate">{user?.displayName ?? "未選択"}</span>
-            <span className="text-slate-400">切替</span>
+          )}
+          <Link href="/home" className="text-sm font-bold text-slate-800">
+            SpotCheck AI
           </Link>
-        </header>
-      )}
+        </div>
+        <Link
+          href="/me"
+          className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+        >
+          <span className="max-w-[8rem] truncate">{user?.displayName ?? "ゲスト"}</span>
+        </Link>
+      </header>
 
-      <main className={`flex-1 px-4 py-5 ${isWorker ? "pb-24" : "pb-10"}`}>{children}</main>
+      <main className="flex-1 px-4 py-5 pb-24">{children}</main>
 
-      {isWorker && (
-        <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-app border-t border-slate-200 bg-white">
-          {WORKER_TABS.map((tab) => {
-            const active = pathname?.startsWith(tab.href) ?? false;
+      <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-app border-t border-slate-200 bg-white">
+        {TABS.map((tab) => {
+          const active = pathname === tab.href || pathname?.startsWith(`${tab.href}/`);
+          if (tab.primary) {
             return (
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-bold ${
-                  active ? "text-worker" : "text-slate-400"
-                }`}
+                className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-bold text-client"
               >
-                <span aria-hidden className="text-lg leading-none">
+                <span
+                  aria-hidden
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-client text-lg leading-none text-white shadow-sm"
+                >
                   {tab.icon}
                 </span>
                 {tab.label}
               </Link>
             );
-          })}
-        </nav>
-      )}
+          }
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-bold ${
+                active ? "text-client" : "text-slate-400"
+              }`}
+            >
+              <span aria-hidden className="text-lg leading-none">
+                {tab.icon}
+              </span>
+              {tab.label}
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

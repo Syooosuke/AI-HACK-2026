@@ -140,7 +140,7 @@ export default function SubmissionStatusPage() {
               className="w-full rounded-xl"
             />
           )}
-          <Button accent="worker" onClick={() => router.push("/worker/tasks")}>
+          <Button accent="worker" onClick={() => router.push("/home")}>
             依頼一覧へ戻る
           </Button>
         </Card>
@@ -158,7 +158,7 @@ export default function SubmissionStatusPage() {
               </p>
               <Button
                 accent="worker"
-                onClick={() => router.push(`/worker/tasks/${taskId}/capture`)}
+                onClick={() => router.push(`/jobs/${taskId}/capture`)}
               >
                 再撮影する
               </Button>
@@ -168,7 +168,7 @@ export default function SubmissionStatusPage() {
               <p className="text-xs leading-relaxed text-red-700">
                 再撮影の上限に達したため、この依頼は他のワーカーへ再開放されました。
               </p>
-              <Button accent="neutral" onClick={() => router.push("/worker/tasks")}>
+              <Button accent="neutral" onClick={() => router.push("/home")}>
                 依頼一覧へ戻る
               </Button>
             </>
@@ -184,7 +184,7 @@ export default function SubmissionStatusPage() {
           <p className="text-xs text-slate-600">
             もう一度送信してください（再撮影回数は消費されません）。
           </p>
-          <Button accent="worker" onClick={() => router.push(`/worker/tasks/${taskId}/capture`)}>
+          <Button accent="worker" onClick={() => router.push(`/jobs/${taskId}/capture`)}>
             もう一度撮影する
           </Button>
         </Card>

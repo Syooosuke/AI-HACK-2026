@@ -40,11 +40,11 @@ export default function WorkerTaskDetailPage() {
     try {
       await acceptTask(taskId);
       toast.success("この依頼を受注しました。撮影に進んでください。");
-      router.push(`/worker/tasks/${taskId}/capture`);
+      router.push(`/jobs/${taskId}/capture`);
     } catch (cause) {
       toast.error(toMessage(cause));
       if (cause instanceof ApiError && cause.code === "TASK_FULL") {
-        router.push("/worker/tasks");
+        router.push("/home");
         return;
       }
       setAccepting(false);
@@ -89,7 +89,7 @@ export default function WorkerTaskDetailPage() {
         <Card>
           <SectionTitle>参考画像</SectionTitle>
           <p className="text-xs text-slate-500">
-            クライアントが期待するイメージ（{task.referenceImages.length}枚）
+            依頼者が期待するイメージ（{task.referenceImages.length}枚）
           </p>
           {/* 参考画像の署名URL発行は Phase 4 以降で対応する。ここでは枚数のみ表示する */}
         </Card>
@@ -126,7 +126,7 @@ export default function WorkerTaskDetailPage() {
       </p>
 
       {canCapture ? (
-        <Button accent="worker" onClick={() => router.push(`/worker/tasks/${taskId}/capture`)}>
+        <Button accent="worker" onClick={() => router.push(`/jobs/${taskId}/capture`)}>
           撮影に進む
         </Button>
       ) : mine ? (
@@ -135,8 +135,8 @@ export default function WorkerTaskDetailPage() {
           onClick={() =>
             router.push(
               mine.latestSubmissionId
-                ? `/worker/tasks/${taskId}/status?submissionId=${mine.latestSubmissionId}`
-                : `/worker/tasks/${taskId}`,
+                ? `/jobs/${taskId}/status?submissionId=${mine.latestSubmissionId}`
+                : `/jobs/${taskId}`,
             )
           }
           disabled={!mine.latestSubmissionId}

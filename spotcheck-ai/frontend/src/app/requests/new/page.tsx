@@ -83,7 +83,7 @@ export default function NewTaskPage() {
         referenceImages: images,
       });
       saveReview(review);
-      router.push("/client/tasks/new/review");
+      router.push("/requests/new/review");
     } catch (cause) {
       toast.error(toMessage(cause));
       setSubmitting(false);

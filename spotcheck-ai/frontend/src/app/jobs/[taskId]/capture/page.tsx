@@ -53,7 +53,7 @@ export default function CapturePage() {
         },
       });
       router.replace(
-        `/worker/tasks/${taskId}/status?submissionId=${response.submission.id}`,
+        `/jobs/${taskId}/status?submissionId=${response.submission.id}`,
       );
     } catch (cause) {
       toast.error(toMessage(cause));
@@ -79,7 +79,7 @@ export default function CapturePage() {
               ? "現在の受注状態では提出できません。検品結果を確認してください。"
               : "先に依頼を受注してください。"}
           </p>
-          <Button accent="neutral" onClick={() => router.replace(`/worker/tasks/${taskId}`)}>
+          <Button accent="neutral" onClick={() => router.replace(`/jobs/${taskId}`)}>
             依頼詳細へ戻る
           </Button>
         </Card>
@@ -91,7 +91,7 @@ export default function CapturePage() {
     <CameraView
       submitting={submitting}
       attemptLabel={`${assignment.retakeCount + 1}回目 / 残り再撮影${assignment.remainingRetakes}回`}
-      onClose={() => router.replace(`/worker/tasks/${taskId}`)}
+      onClose={() => router.replace(`/jobs/${taskId}`)}
       onSubmit={(result) => void submit(result)}
     />
   );

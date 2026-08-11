@@ -112,7 +112,7 @@ export default function ResultsPage() {
                   撮影: {result.worker.displayName}（★{result.worker.trustScore.toFixed(1)}）
                 </p>
                 <Link
-                  href={`/client/tasks/${taskId}/results/${result.submissionId}`}
+                  href={`/requests/${taskId}/results/${result.submissionId}`}
                   className="rounded-lg bg-client px-3 py-2 text-xs font-bold text-white"
                 >
                   詳細を見る

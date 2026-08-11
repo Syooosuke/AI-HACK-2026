@@ -1,6 +1,6 @@
 "use client";
 
-/** ワーカーの受注一覧（下部タブ「依頼」）。 */
+/** 受注した依頼の一覧（マイページ →「受注した依頼」）。 */
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -60,7 +60,7 @@ export default function MyAssignmentsPage() {
             <div className="flex gap-2">
               {item.status === "accepted" && (
                 <Link
-                  href={`/worker/tasks/${item.taskId}/capture`}
+                  href={`/jobs/${item.taskId}/capture`}
                   className="flex-1 rounded-lg bg-worker py-2 text-center text-xs font-bold text-white"
                 >
                   撮影する
@@ -68,7 +68,7 @@ export default function MyAssignmentsPage() {
               )}
               {item.latestSubmissionId && (
                 <Link
-                  href={`/worker/tasks/${item.taskId}/status?submissionId=${item.latestSubmissionId}`}
+                  href={`/jobs/${item.taskId}/status?submissionId=${item.latestSubmissionId}`}
                   className="flex-1 rounded-lg border border-slate-300 py-2 text-center text-xs font-bold text-slate-600"
                 >
                   検品結果

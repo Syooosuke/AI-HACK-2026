@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * 地点ピッカー（画面①）。地図をタップしてピンを置く。
+ * 地点ピッカー（依頼作成）。地名・住所での検索と、地図タップによるピン配置の両方に対応する。
  * APIキー未設定・読み込み失敗時は緯度経度の手入力フォームへフォールバックする。
  */
 
 import { useEffect, useRef } from "react";
 
+import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
 import { useGoogleMaps } from "@/components/map/useGoogleMaps";
 import { env } from "@/lib/env";
 import { formatCoords } from "@/lib/geo";
@@ -17,6 +18,9 @@ export type PickedLocation = {
   lng: number;
   address: string | null;
 };
+
+/** 検索で地点を選んだときの拡大率（周辺が分かる程度に寄せる）。 */
+const SEARCH_ZOOM = 17;
 
 export function LocationPicker({
   value,
@@ -64,12 +68,22 @@ export function LocationPicker({
     markerRef.current = marker;
   }, [status, value.lat, value.lng]);
 
+  /** 検索結果の地点へ地図とピンを移動する。 */
+  const applySearch = (place: SearchedPlace) => {
+    const position = { lat: place.lat, lng: place.lng };
+    mapRef.current?.setCenter(position);
+    mapRef.current?.setZoom(SEARCH_ZOOM);
+    markerRef.current?.setPosition(position);
+    onChangeRef.current({ ...position, address: place.address });
+  };
+
   if (status === "ready") {
     return (
       <div className="space-y-2">
+        <PlaceSearchBox onSelect={applySearch} />
         <div ref={containerRef} className="h-56 w-full overflow-hidden rounded-xl bg-slate-200" />
         <p className="text-xs text-slate-500">
-          地図をタップしてピンを移動できます — {formatCoords(value.lat, value.lng)}
+          検索するか、地図をタップしてピンを移動できます — {formatCoords(value.lat, value.lng)}
         </p>
         {value.address && <p className="text-xs text-slate-600">{value.address}</p>}
       </div>

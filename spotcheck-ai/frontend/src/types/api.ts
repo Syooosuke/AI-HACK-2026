@@ -3,8 +3,6 @@
  * JSONキーは camelCase。
  */
 
-export type UserRole = "client" | "worker";
-
 export type TaskStatus =
   | "screening"
   | "rejected"
@@ -48,13 +46,22 @@ export type HealthResponse = {
   configWarnings: string[];
 };
 
-export type DemoUser = {
+/** ログイン中のユーザー（`GET /api/auth/me` / ログイン応答）。 */
+export type AuthUser = {
   id: string;
-  role: UserRole;
+  loginId: string;
   displayName: string;
   trustScore: number;
   completedTaskCount: number;
   avatarUrl: string | null;
+};
+
+export type AuthResponse = {
+  token: string;
+  tokenType: string;
+  /** トークンの有効期間（秒）。 */
+  expiresIn: number;
+  user: AuthUser;
 };
 
 export type ReviewChecks = {

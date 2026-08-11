@@ -95,7 +95,7 @@ export default function TaskProgressPage() {
       </Card>
 
       {hasResults && (
-        <Link href={`/client/tasks/${task.id}/results`}>
+        <Link href={`/requests/${task.id}/results`}>
           <Button accent="client">結果を見る</Button>
         </Link>
       )}

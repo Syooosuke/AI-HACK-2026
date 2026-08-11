@@ -1,6 +1,6 @@
 "use client";
 
-/** クライアントの依頼一覧（画面③への入口）。 */
+/** 自分が出した依頼の一覧（マイページ →「出した依頼」/ 画面③への入口）。 */
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -13,7 +13,7 @@ import { listMyTasks } from "@/lib/api/tasks";
 import { formatDateTime, formatRemaining } from "@/lib/datetime";
 import type { TaskListItem } from "@/types/api";
 
-export default function ClientTasksPage() {
+export default function MyRequestsPage() {
   const toast = useToast();
   const [tasks, setTasks] = useState<TaskListItem[] | null>(null);
 
@@ -34,9 +34,9 @@ export default function ClientTasksPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-slate-800">依頼一覧</h1>
+        <h1 className="text-lg font-bold text-slate-800">出した依頼</h1>
         <Link
-          href="/client/tasks/new"
+          href="/requests/new"
           className="rounded-xl bg-client px-3 py-2 text-xs font-bold text-white"
         >
           ＋ 新規依頼
@@ -54,7 +54,7 @@ export default function ClientTasksPage() {
         <EmptyState
           message="まだ依頼がありません。"
           action={
-            <Link href="/client/tasks/new">
+            <Link href="/requests/new">
               <Button accent="client">最初の依頼を作成する</Button>
             </Link>
           }
@@ -66,7 +66,7 @@ export default function ClientTasksPage() {
           <Card as="li" key={task.id} className="space-y-2">
             <div className="flex items-start justify-between gap-3">
               <Link
-                href={`/client/tasks/${task.id}`}
+                href={`/requests/${task.id}`}
                 className="text-sm font-bold leading-snug text-slate-800 hover:underline"
               >
                 {task.title}

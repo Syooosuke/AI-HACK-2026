@@ -26,7 +26,7 @@ export function TaskCard({ task }: { task: NearbyTask }) {
           ¥{task.rewardAmount.toLocaleString()}
         </p>
         <Link
-          href={`/worker/tasks/${task.id}`}
+          href={`/jobs/${task.id}`}
           className="rounded-lg bg-worker px-3 py-2 text-xs font-bold text-white"
         >
           詳細を見る

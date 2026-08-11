@@ -37,7 +37,7 @@ export default function ReviewPage() {
     if (data?.review.decision !== "approved") return;
     const timer = window.setTimeout(() => {
       clearReview();
-      router.push(`/client/tasks/${data.task.id}`);
+      router.push(`/requests/${data.task.id}`);
     }, AUTO_REDIRECT_MS);
     return () => window.clearTimeout(timer);
   }, [data, router]);
@@ -51,7 +51,7 @@ export default function ReviewPage() {
       <EmptyState
         message="表示する審査結果がありません。依頼作成からやり直してください。"
         action={
-          <Link href="/client/tasks/new" className="text-sm font-bold text-client underline">
+          <Link href="/requests/new" className="text-sm font-bold text-client underline">
             依頼を作成する
           </Link>
         }
@@ -110,7 +110,7 @@ export default function ReviewPage() {
               accent="worker"
               onClick={() => {
                 clearReview();
-                router.push(`/client/tasks/${task.id}`);
+                router.push(`/requests/${task.id}`);
               }}
             >
               今すぐ確認
@@ -160,7 +160,7 @@ export default function ReviewPage() {
             accent="neutral"
             onClick={() => {
               clearReview();
-              router.push("/client/tasks/new");
+              router.push("/requests/new");
             }}
           >
             新しい依頼を作成
