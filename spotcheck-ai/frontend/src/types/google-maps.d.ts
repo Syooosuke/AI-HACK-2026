@@ -180,5 +180,7 @@ declare global {
   interface Window {
     google?: { maps: GMapsNamespace };
     __spotcheckMapsLoader?: Promise<void>;
+    /** Google Maps がキーの認証に失敗したときに呼ぶ関数（Googleの仕様）。 */
+    gm_authFailure?: () => void;
   }
 }

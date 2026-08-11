@@ -8,7 +8,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { useGoogleMaps } from "@/components/map/useGoogleMaps";
+import { MAPS_AUTH_ERROR_MESSAGE, useGoogleMaps } from "@/components/map/useGoogleMaps";
 import type { GMap, GMarker } from "@/types/google-maps";
 import type { NearbyTask } from "@/types/api";
 
@@ -84,12 +84,10 @@ export function TaskMarkers({
           "地図を読み込んでいます…"
         ) : (
           <>
-            <p>
-              {status === "error"
-                ? "地図を読み込めませんでした。"
-                : "地図APIキーが未設定です。"}
+            <p className="text-xs">
+              {status === "error" ? MAPS_AUTH_ERROR_MESSAGE : "地図APIキーが未設定です。"}
             </p>
-            <p className="text-xs">「リスト」タブから依頼を確認できます。</p>
+            <p className="text-xs">ホームのリストから依頼を確認できます。</p>
           </>
         )}
       </div>

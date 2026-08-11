@@ -63,10 +63,23 @@ export default function NewTaskPage() {
 
   const canSubmit = Object.keys(errors).length === 0 && !submitting;
 
-  /** タイトル側のチップ。詳細が空のときは詳細もまとめて埋める（入力の手間を減らす）。 */
-  const applyPresetToTitle = (preset: TaskPreset) => {
+  /**
+   * タイトル側のチップ。詳細が空のときは詳細もまとめて埋める（入力の手間を減らす）。
+   * 選択済みのチップを再タップしたら消す。まとめて入れた詳細も、手で書き換えていなければ一緒に消す。
+   */
+  const applyPresetToTitle = (preset: TaskPreset, active: boolean) => {
+    if (active) {
+      setTitle("");
+      if (description.trim() === preset.description.trim()) setDescription("");
+      return;
+    }
     setTitle(preset.title);
     if (!description.trim()) setDescription(preset.description);
+  };
+
+  /** 詳細側のチップ。再タップで詳細を空にする。 */
+  const applyPresetToDescription = (preset: TaskPreset, active: boolean) => {
+    setDescription(active ? "" : preset.description);
   };
 
   const onPickImages = (files: FileList | null) => {
@@ -152,7 +165,8 @@ export default function NewTaskPage() {
         <div className="space-y-2">
           <SectionTitle>5. 依頼タイトル</SectionTitle>
           <p className="text-xs text-slate-500">
-            よくある依頼はタップで入力できます（詳細が空のときは詳細も一緒に入ります）
+            よくある依頼はタップで入力できます（詳細が空のときは詳細も一緒に入ります）。
+            選択中のチップをもう一度タップすると消えます
           </p>
           <PresetChips onPick={applyPresetToTitle} currentValue={title} field="title" />
           <Field label="" error={errors.title}>
@@ -170,10 +184,10 @@ export default function NewTaskPage() {
         <div className="space-y-2">
           <SectionTitle>6. 詳細メッセージ</SectionTitle>
           <p className="text-xs text-slate-500">
-            タップすると、その依頼でよく使う文章に置き換わります
+            タップすると、その依頼でよく使う文章に置き換わります。もう一度タップで消えます
           </p>
           <PresetChips
-            onPick={(preset) => setDescription(preset.description)}
+            onPick={applyPresetToDescription}
             currentValue={description}
             field="description"
           />

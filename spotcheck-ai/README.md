@@ -180,7 +180,12 @@ cd backend && ./.venv/bin/python -m scripts.init_storage
 | `InvalidKeyMapError` | キー文字列の誤り（前後の空白・改行） |
 | `ApiNotActivatedMapError` | Maps JavaScript API が未有効 |
 | `BillingNotEnabledMapError` | 請求先アカウント未設定（→ Demo Key を使う） |
-| `RefererNotAllowedMapError` | リファラー制限に `http://localhost:3000/*` が無い |
+| `RefererNotAllowedMapError` | リファラー制限に**いま開いているURL**が無い（例: `3100` 番で動かしているのに `http://localhost:3000/*` しか許可していない） |
+
+> 「**このページでは Google マップが正しく読み込まれませんでした**」という灰色の表示が出た場合は、
+> 上のいずれかです。ブラウザのコンソール（F12）に上の名前が出ているので、それで切り分けてください。
+> アプリ側は認証失敗を検知して**日本語の対処案内と緯度経度の手入力**に切り替えるため、
+> 地図が使えなくても依頼の作成は続けられます。
 
 キーが不正でもアプリは落ちず、手入力フォームへ自動フォールバックします。
 

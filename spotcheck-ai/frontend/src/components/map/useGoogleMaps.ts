@@ -2,8 +2,13 @@
 
 /**
  * Google Maps JavaScript API のローダー。
- * キーが未設定のときは `unavailable` を返し、呼び出し側はフォールバックUIを出す
- * （docs/01-architecture.md 4節）。
+ *
+ * キーが未設定のときは `unavailable`、読み込み失敗やキーの認証失敗は `error` を返し、
+ * 呼び出し側はフォールバックUIを出す（docs/01-architecture.md 4節）。
+ *
+ * キーが不正・課金未有効・リファラー制限違反の場合、スクリプト自体は読み込めるため
+ * `onerror` では検知できない。Google が呼ぶ `window.gm_authFailure` を受け取って
+ * `error` に落とし、**Googleの灰色オーバーレイではなく日本語の対処案内を出す。**
  */
 
 import { useEffect, useState } from "react";
@@ -11,6 +16,23 @@ import { useEffect, useState } from "react";
 import { env } from "@/lib/env";
 
 export type MapsStatus = "unavailable" | "loading" | "ready" | "error";
+
+/** 認証失敗時に画面へ出す対処方法。原因を隠さず具体的に書く。 */
+export const MAPS_AUTH_ERROR_MESSAGE =
+  "地図の認証に失敗しました。Google Cloud で ①課金（Billing）の有効化 ②Maps JavaScript API の有効化 ③APIキーのリファラー制限に現在のURLが含まれているか を確認してください。";
+
+let authFailed = false;
+const authListeners = new Set<() => void>();
+
+function markAuthFailure(): void {
+  authFailed = true;
+  authListeners.forEach((listener) => listener());
+}
+
+if (typeof window !== "undefined") {
+  // Google Maps がキーの認証に失敗したときに呼ぶグローバル関数
+  window.gm_authFailure = markAuthFailure;
+}
 
 function loadScript(apiKey: string): Promise<void> {
   if (window.google?.maps) return Promise.resolve();
@@ -38,16 +60,29 @@ export function useGoogleMaps(): MapsStatus {
       setStatus("unavailable");
       return;
     }
+    if (authFailed) {
+      setStatus("error");
+      return;
+    }
+
     let cancelled = false;
+    const onAuthFailure = () => {
+      if (!cancelled) setStatus("error");
+    };
+    authListeners.add(onAuthFailure);
+
     loadScript(env.googleMapsApiKey)
       .then(() => {
-        if (!cancelled) setStatus(window.google?.maps ? "ready" : "error");
+        if (cancelled) return;
+        setStatus(authFailed ? "error" : window.google?.maps ? "ready" : "error");
       })
       .catch(() => {
         if (!cancelled) setStatus("error");
       });
+
     return () => {
       cancelled = true;
+      authListeners.delete(onAuthFailure);
     };
   }, []);
 

@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
 import { StreetViewPanel } from "@/components/map/StreetViewPanel";
-import { useGoogleMaps } from "@/components/map/useGoogleMaps";
+import { MAPS_AUTH_ERROR_MESSAGE, useGoogleMaps } from "@/components/map/useGoogleMaps";
 import { env } from "@/lib/env";
 import { formatCoords } from "@/lib/geo";
 import type { GMap, GMarker } from "@/types/google-maps";
@@ -150,10 +150,19 @@ export function LocationPicker({
         </div>
       ) : (
         <div className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-          {status === "error"
-            ? "地図を読み込めませんでした。緯度経度を直接入力してください。"
-            : "地図APIキーが未設定のため、緯度経度を直接入力してください。"}
-          <span className="ml-1 font-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</span>
+          {status === "error" ? (
+            <>
+              {MAPS_AUTH_ERROR_MESSAGE}
+              <span className="mt-1 block">
+                地図が使えないあいだは、下の緯度経度を直接入力して依頼を作成できます。
+              </span>
+            </>
+          ) : (
+            <>
+              地図APIキーが未設定のため、緯度経度を直接入力してください。
+              <span className="ml-1 font-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</span>
+            </>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
