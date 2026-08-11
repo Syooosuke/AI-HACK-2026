@@ -158,10 +158,13 @@ git fetch --prune origin                        # 消えたリモート追跡を
 
 ### 6.4 機械的な強制
 
-| 仕組み | 何を防ぐか |
-|---|---|
-| `.githooks/pre-push` | `main` への push、`dev` 由来でないブランチの push、lint / テスト未通過での push |
-| GitHub の ruleset（`main`） | 直push・force push・ブランチ削除。PRを介さない変更 |
+| 仕組み | 何を防ぐか | 限界 |
+|---|---|---|
+| `.githooks/pre-push` | `main` への push / `dev` を含まないブランチの push / lint・テスト未通過での push | フックを有効化した環境でのみ効く |
+| GitHub ruleset `protect-main` | `main` への直push・force push・ブランチ削除 | リポジトリ管理者は bypass できる |
+
+**`main` へのPRの作成自体は GitHub の機能では止められない。**
+`base` が `main` のPRを見つけたら、レビューせずクローズして `dev` 向けに出し直すこと。
 
 フックは各自の環境で一度だけ有効化する（クローン直後に実行）。
 
