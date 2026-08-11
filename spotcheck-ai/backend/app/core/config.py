@@ -63,6 +63,24 @@ class Settings(BaseSettings):
     orca_max_retries: int = 2
     orca_stub_mode: bool = False
 
+    # --- 投稿カードのタグ判定 ---
+    #: 作成からこの時間以内は NEW タグを出す
+    new_task_hours: int = 24
+    #: 詳細の閲覧数がこの値以上なら HOT タグを出す
+    hot_view_count: int = 20
+
+    # --- 投稿サムネイル ---
+    #: Street View Static API 用のサーバー側キー。フロントのキーとは分ける
+    #: （フロントのキーはリファラー制限がかかるためサーバーからは使えない）
+    google_maps_server_api_key: str = ""
+    #: サムネイルの一辺（正方形）
+    thumbnail_size: int = 640
+    #: 画像生成に使う OrcaRouter のルーター名。未設定ならストリートビュー画像をそのまま使う
+    #: TODO(human-decision): 画像生成のルーター名・エンドポイント形式が判明したら設定する
+    orca_router_image: str = ""
+    #: 画像生成のエンドポイント（OpenAI images 互換を想定）
+    orca_images_path: str = "/images/generations"
+
     # --- 判定パラメータ ---
     task_review_score_threshold: int = 70
     submission_score_threshold: int = 70

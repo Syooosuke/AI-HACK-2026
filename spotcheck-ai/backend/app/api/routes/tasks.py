@@ -73,7 +73,7 @@ def list_tasks(session: DbSession, client: CurrentUser) -> TaskListResponse:
 
 
 @router.get("/tasks/nearby", response_model=NearbyTaskListResponse)
-def list_nearby_tasks(
+async def list_nearby_tasks(
     session: DbSession,
     worker: CurrentUser,
     lat: Annotated[float, Query(ge=-90, le=90)],
@@ -84,14 +84,15 @@ def list_nearby_tasks(
 ) -> NearbyTaskListResponse:
     """近傍の公開依頼一覧（画面④）。"""
     return NearbyTaskListResponse(
-        tasks=task_service.find_nearby(
+        tasks=await task_service.find_nearby(
             session,
-            viewer_id=worker.id,
+            viewer=worker,
             lat=lat,
             lng=lng,
             radius_km=radius_km,
             limit=limit,
             sort=sort,
+            storage=get_storage(),
         )
     )
 
@@ -102,7 +103,7 @@ def list_my_assignments(session: DbSession, worker: CurrentUser) -> MyAssignment
 
 
 @router.get("/tasks/{task_id}", response_model=TaskDetail)
-def get_task(
+async def get_task(
     session: DbSession,
     user: CurrentUser,
     task_id: uuid.UUID,
@@ -110,7 +111,9 @@ def get_task(
     lng: Annotated[float | None, Query(ge=-180, le=180)] = None,
 ) -> TaskDetail:
     """依頼詳細。依頼のオーナーか撮影する側かで返す内容を変える（docs/03-api.md 3.4）。"""
-    return task_service.build_task_detail(session, task_id=task_id, user=user, lat=lat, lng=lng)
+    return await task_service.build_task_detail(
+        session, task_id=task_id, user=user, storage=get_storage(), lat=lat, lng=lng
+    )
 
 
 @router.post("/tasks/{task_id}/resubmit", response_model=TaskReviewResponse)

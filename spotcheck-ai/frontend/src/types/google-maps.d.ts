@@ -27,7 +27,34 @@ export interface GeocoderResult {
   geometry?: { location: GLatLng };
 }
 
-/** Places Autocomplete の候補（必要な項目のみ）。 */
+// ----------------------------------------------------------------------
+// Places（新API）
+// ----------------------------------------------------------------------
+/** `AutocompleteSuggestion.fetchAutocompleteSuggestions()` が返す候補。 */
+export interface GPlacePrediction {
+  placeId?: string;
+  text?: { text: string };
+  mainText?: { text: string };
+  secondaryText?: { text: string };
+  toPlace?: () => GPlaceNew;
+}
+
+export interface GAutocompleteSuggestionNew {
+  placePrediction?: GPlacePrediction | null;
+}
+
+/** 新APIの Place オブジェクト（必要なフィールドのみ）。 */
+export interface GPlaceNew {
+  id?: string;
+  displayName?: string | null;
+  formattedAddress?: string | null;
+  location?: GLatLng | null;
+  fetchFields(request: { fields: string[] }): Promise<{ place?: GPlaceNew }>;
+}
+
+// ----------------------------------------------------------------------
+// Places（旧API）
+// ----------------------------------------------------------------------
 export interface GAutocompletePrediction {
   place_id: string;
   description: string;
@@ -62,9 +89,18 @@ export interface GPlacesService {
 }
 
 export interface GPlacesNamespace {
-  AutocompleteService: new () => GAutocompleteService;
-  PlacesService: new (attrContainer: HTMLElement | GMap) => GPlacesService;
-  PlacesServiceStatus: { OK: string };
+  /** 新API。Places API (New) が有効なときに使える。 */
+  AutocompleteSuggestion?: {
+    fetchAutocompleteSuggestions(request: {
+      input: string;
+      language?: string;
+      includedRegionCodes?: string[];
+    }): Promise<{ suggestions: GAutocompleteSuggestionNew[] }>;
+  };
+  /** 旧API。レガシーAPIが有効なプロジェクトでのみ使える。 */
+  AutocompleteService?: new () => GAutocompleteService;
+  PlacesService?: new (attrContainer: HTMLElement | GMap) => GPlacesService;
+  PlacesServiceStatus?: { OK: string };
 }
 
 export interface GMapsNamespace {
@@ -90,7 +126,7 @@ export interface GMapsNamespace {
       callback: (results: GeocoderResult[] | null, status: string) => void,
     ): void;
   };
-  /** Places ライブラリ。APIキーで Places API が有効でない場合は undefined になりうる。 */
+  /** Places ライブラリ。Places API が有効でない場合は undefined になりうる。 */
   places?: GPlacesNamespace;
 }
 

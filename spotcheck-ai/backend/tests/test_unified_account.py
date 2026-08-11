@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.storage import get_storage
 from app.main import app
 from app.models import Task, User
 from app.services import task_service
@@ -112,14 +113,15 @@ def test_results_are_limited_to_owner(session: Session, users: dict[str, User]) 
     assert response.status_code == 403
 
 
-def test_find_nearby_excludes_viewer_tasks(session: Session, users: dict[str, User]) -> None:
-    """サービス層でも viewer_id による除外が効いている。"""
+async def test_find_nearby_excludes_viewer_tasks(session: Session, users: dict[str, User]) -> None:
+    """サービス層でも閲覧者による除外が効いている。"""
     make_task(session, client=users["client"])
     other: Task = make_task(session, client=users["worker"])
 
-    found = task_service.find_nearby(
+    found = await task_service.find_nearby(
         session,
-        viewer_id=users["client"].id,
+        viewer=users["client"],
+        storage=get_storage(),
         lat=35.6595,
         lng=139.7005,
         radius_km=5,
