@@ -92,7 +92,24 @@ curl -s -o /dev/null -w "backend  %{http_code}\n" http://localhost:8000/api/heal
 curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
 ```
 
-`healthy` / `200` / `200` なら完了です。`http://localhost:3000` を開いてデモシナリオへ進めます。
+`healthy` / `200` / `200` なら完了です。`http://localhost:3000` を開くとログイン画面が出ます。
+
+### 5. ログイン
+
+`scripts.seed_demo_users` で投入されるアカウントを使います（パスワードは全員 `spotcheck123`）。
+
+| ログインID | 表示名 |
+|---|---|
+| `demo_company` | デモ株式会社 |
+| `yamada` | 山田 太郎 |
+| `sato` | 佐藤 花子 |
+| `suzuki` | 鈴木 一郎 |
+
+画面右上の「新規登録」から自分のアカウントを作ることもできます。
+**ロールはありません**。どのアカウントでも「依頼する」と「撮影する」の両方ができます
+（ただし自分が出した依頼は自分で受注できません。動作確認には2アカウント使ってください）。
+
+パスワードを変えたい場合は `DEMO_USER_PASSWORD=好きなパスワード ./.venv/bin/python -m scripts.seed_demo_users`。
 
 ---
 
@@ -104,7 +121,8 @@ curl -s -o /dev/null -w "frontend %{http_code}\n" http://localhost:3000/
 |---|---|---|
 | `ORCA_API_KEY`（backend） | 実際のAI審査・画像検品 | 固定応答のスタブ（デモは通る） |
 | `SUPABASE_URL` + `SUPABASE_SECRET_KEY`（backend） | Supabase Storage への画像保存 | ローカル保存（`LOCAL_STORAGE_DIR`） |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（frontend） | 地図表示・住所の自動取得 | 緯度経度の手入力フォーム |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（frontend） | 地図表示・場所検索・住所の自動取得 | 緯度経度の手入力フォーム |
+| `JWT_SECRET`（backend） | 本番相当のトークン署名 | 開発用の固定鍵（誰でも偽造できる） |
 | `DATABASE_URL`（backend） | 別のDBを使う | docker-compose のローカルDB |
 
 ### AI（OrcaRouter）
@@ -137,14 +155,15 @@ cd backend && ./.venv/bin/python -m scripts.init_storage
 請求先アカウントを紐付けて次の2つを有効化 → 「認証情報」でAPIキーを作成。
 
 - **Maps JavaScript API**（地図本体）
-- **Geocoding API**（画面①でピンを置いた時の住所自動取得）
+- **Geocoding API**（ピンを置いた時の住所自動取得と、地名・住所のテキスト検索）
+- **Places API**（任意。検索ボックスの候補表示。無効でも Geocoding によるテキスト検索で動きます）
 
 取得したキーを `frontend/.env.local` の `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` に設定します。
 `next dev` が `.env.local` を自動リロードするので、ブラウザを Cmd+Shift+R で再読み込みしてください。
 
 > `NEXT_PUBLIC_` の値は**ブラウザに露出します**。キーの編集画面で必ず制限してください。
 > アプリケーションの制限 → HTTPリファラー `http://localhost:3000/*` /
-> APIの制限 → `Maps JavaScript API` と `Geocoding API` のみ。
+> APIの制限 → `Maps JavaScript API` / `Geocoding API`（＋使う場合は `Places API`）のみ。
 
 うまく表示されないときはブラウザのコンソール（F12）にGoogleのエラー名が出ます。
 

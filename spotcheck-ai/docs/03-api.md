@@ -7,17 +7,20 @@
 
 ## 1. 共通仕様
 
-### 1.1 認証（デモ用 / D-06）
+### 1.1 認証（ログインID＋パスワード / D-06）
 
-すべてのリクエストにヘッダーを付与する。
+`POST /api/auth/login`（または `/api/auth/signup`）で得たトークンを、
+以降のすべてのリクエストに付与する。
 
 ```
-X-Demo-User-Id: <users.id の UUID>
+Authorization: Bearer <アクセストークン(JWT)>
 ```
 
-- ヘッダーが無い、または存在しないIDの場合は `401 UNAUTHENTICATED` を返す。
-- 各エンドポイントは、要求ロール（client / worker）と一致しない場合 `403 FORBIDDEN` を返す。
-- `app/api/deps.py` に `get_current_user()` / `require_role(role)` を実装し、本認証への差し替え時にここだけ修正すれば済む構造にする。
+- ヘッダーが無い・形式不正・署名不正・期限切れ・利用者が存在しない場合はいずれも `401 UNAUTHENTICATED`。
+- **ロールによる出し分けは行わない。** 1アカウントで「依頼する」「撮影する」の両方ができる。
+  権限は「依頼のオーナーか、その依頼の受注者か」で判定し、該当しなければ `403 FORBIDDEN` を返す。
+- トークンは JWT（HS256）。鍵は `JWT_SECRET`、有効期間は `JWT_EXPIRE_DAYS`（既定30日）。
+- `app/api/deps.py` の `get_current_user()` が唯一の入口。
 
 ### 1.2 エラーレスポンス
 
@@ -36,10 +39,10 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | HTTP | code の例 | 用途 |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | 入力値不正。`details` にフィールド別エラー |
-| 401 | `UNAUTHENTICATED` | ヘッダー欠落 |
-| 403 | `FORBIDDEN` | ロール不一致・他人のリソース |
+| 401 | `UNAUTHENTICATED` `INVALID_CREDENTIALS` | 未ログイン・トークン不正・認証情報の誤り |
+| 403 | `FORBIDDEN` `CANNOT_ACCEPT_OWN_TASK` | 他人のリソース・自分の依頼の受注 |
 | 404 | `TASK_NOT_FOUND` `SUBMISSION_NOT_FOUND` | |
-| 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` | 状態競合 |
+| 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` `LOGIN_ID_TAKEN` | 状態競合 |
 | 413 | `FILE_TOO_LARGE` | 画像サイズ超過 |
 | 502 | `AI_SERVICE_ERROR` | OrcaRouter呼び出し失敗 |
 
@@ -57,25 +60,80 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 ## 2. エンドポイント一覧
 
-| メソッド | パス | ロール | 概要 |
+「認証」列の `-` は認証不要、`必須` はトークンが必要なことを示す。
+アクセス範囲はロールではなくリソースの所有関係で決まる。
+
+| メソッド | パス | 認証 | 概要 |
 |---|---|---|---|
 | GET | `/api/health` | - | ヘルスチェック |
-| GET | `/api/users/demo` | - | デモユーザー一覧（画面切替用） |
-| POST | `/api/tasks` | client | 依頼作成＋AI審査（同期） |
-| POST | `/api/tasks/{taskId}/resubmit` | client | 補足情報を追記して再審査 |
-| GET | `/api/tasks` | client | 自分の依頼一覧 |
-| GET | `/api/tasks/{taskId}` | both | 依頼詳細＋進行状況 |
-| GET | `/api/tasks/nearby` | worker | 近傍の公開依頼一覧 |
-| POST | `/api/tasks/{taskId}/accept` | worker | 受注 |
-| POST | `/api/tasks/{taskId}/cancel` | client | 依頼取消 |
-| GET | `/api/assignments/mine` | worker | 自分の受注一覧 |
-| POST | `/api/submissions` | worker | 画像＋メタデータ提出 |
-| GET | `/api/submissions/{submissionId}` | both | 検品状況・結果のポーリング |
-| GET | `/api/tasks/{taskId}/results` | client | 合格済み提出の一覧（画面⑨） |
+| POST | `/api/auth/signup` | - | 新規登録（トークンを返す） |
+| POST | `/api/auth/login` | - | ログイン |
+| GET | `/api/auth/me` | 必須 | ログイン中ユーザーの取得・トークン検証 |
+| POST | `/api/tasks` | 必須 | 依頼作成＋AI審査（同期） |
+| POST | `/api/tasks/{taskId}/resubmit` | 必須 | 補足情報を追記して再審査（オーナーのみ） |
+| GET | `/api/tasks` | 必須 | 自分が出した依頼の一覧 |
+| GET | `/api/tasks/{taskId}` | 必須 | 依頼詳細＋進行状況 |
+| GET | `/api/tasks/nearby` | 必須 | 近傍の公開依頼一覧（自分の依頼は除く） |
+| POST | `/api/tasks/{taskId}/accept` | 必須 | 受注（自分の依頼は不可） |
+| POST | `/api/tasks/{taskId}/cancel` | 必須 | 依頼取消（オーナーのみ） |
+| GET | `/api/assignments/mine` | 必須 | 自分の受注一覧 |
+| POST | `/api/submissions` | 必須 | 画像＋メタデータ提出 |
+| GET | `/api/submissions/{submissionId}` | 必須 | 検品状況・結果のポーリング（本人とオーナーのみ） |
+| GET | `/api/tasks/{taskId}/results` | 必須 | 合格済み提出の一覧（画面⑨。オーナーのみ） |
 
 ---
 
 ## 3. 詳細
+
+### 3.0 認証 `/api/auth/*`
+
+#### `POST /api/auth/signup` — 新規登録
+
+**リクエスト**
+
+| フィールド | 型 | 必須 | 制約 |
+|---|---|---|---|
+| `loginId` | string | ✓ | 3〜32文字。半角英数字とアンダースコアのみ |
+| `password` | string | ✓ | 8文字以上・72バイト以内（bcryptの上限） |
+| `displayName` | string | ✓ | 1〜40文字 |
+
+- ログインIDが既に使われている場合は `409 LOGIN_ID_TAKEN`。
+- 登録に成功するとそのままログイン状態にできるよう、トークンを返す（`201`）。
+
+#### `POST /api/auth/login` — ログイン
+
+**リクエスト**: `loginId` / `password`
+
+- ログインIDの大文字小文字は区別しない。
+- IDが存在しない場合とパスワード誤りは**同じ応答**にする（`401 INVALID_CREDENTIALS`）。
+  IDの存在を推測させないため、メッセージも区別しない。
+
+**レスポンス `200`**（signup も同じ形）
+```json
+{
+  "token": "<JWT>",
+  "tokenType": "Bearer",
+  "expiresIn": 2592000,
+  "user": {
+    "id": "uuid",
+    "loginId": "yamada",
+    "displayName": "山田 太郎",
+    "trustScore": 92.0,
+    "completedTaskCount": 3,
+    "avatarUrl": null
+  }
+}
+```
+
+> `passwordHash` はいかなるレスポンスにも含めない。
+
+#### `GET /api/auth/me` — ログイン中ユーザー
+
+保持しているトークンの有効性確認と、ユーザー情報の最新化に使う。
+
+**レスポンス `200`**: `{ "user": { ...上と同じ } }`
+
+---
 
 ### 3.1 `POST /api/tasks` — 依頼作成＋AI審査
 
@@ -160,7 +218,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 | 名前 | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `lat` | number | 必須 | ワーカーの現在地 |
+| `lat` | number | 必須 | 検索の中心（現在地、または地図で検索した地点） |
 | `lng` | number | 必須 | |
 | `radiusKm` | number | 5 | 0.5〜50 |
 | `limit` | int | 50 | 最大100 |
@@ -169,6 +227,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 **抽出条件**
 - `status = 'open'` または（`status='in_progress'` かつ 空き枠あり）
 - `deadline_at > now()`
+- **自分が出した依頼は除外する**（受注できないため）
 - バウンディングボックスで粗く絞り、Haversineで正確な距離を計算して `radiusKm` 内に限定
 
 **レスポンス `200`**
@@ -197,11 +256,11 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 ### 3.4 `GET /api/tasks/{taskId}` — 依頼詳細
 
-ロールによって返す内容を変える。
+依頼のオーナー（`client_id` が自分）か、それ以外（撮影する側）かで返す内容を変える。
 
 **共通部分**: id, title, description, location*, scheduledAt, deadlineAt, rewardAmount, requiredWorkerCount, status, referenceImages[]
 
-**client のとき追加**: `timeline`（画面③の進行状況タイムライン）
+**オーナーのとき追加**: `timeline`（画面③の進行状況タイムライン）
 ```json
 "timeline": [
   { "step": "published",   "label": "依頼公開",   "status": "done",    "at": "2026-05-24T10:30:00+09:00" },
@@ -213,9 +272,9 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 ```
 `status` は `done` / `current` / `pending` の3値。
 
-**worker のとき追加**: `distanceKm`（クエリ `lat`/`lng` があれば計算）、`myAssignment`（自分の受注状況。無ければ null）
+**オーナー以外のとき追加**: `distanceKm`（クエリ `lat`/`lng` があれば計算）、`myAssignment`（自分の受注状況。無ければ null）
 
-> **ワーカーには他ワーカーの提出画像を返さない。**
+> **撮影する側には他ワーカーの提出画像を返さない。**
 
 ---
 
@@ -225,10 +284,11 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 
 **処理（1トランザクション）**
 1. `SELECT ... FOR UPDATE` で tasks をロック。
-2. `deadline_at` 超過 → `409 INVALID_STATE`。
-3. 同一ワーカーの有効な assignment が既にある → `409 ALREADY_ACCEPTED`。
-4. 空き枠なし → `409 TASK_FULL`。
-5. assignment を `accepted` で作成。tasks を `in_progress` に更新。
+2. 自分が出した依頼 → `403 CANNOT_ACCEPT_OWN_TASK`。
+3. `deadline_at` 超過 → `409 INVALID_STATE`。
+4. 同一ワーカーの有効な assignment が既にある → `409 ALREADY_ACCEPTED`。
+5. 空き枠なし → `409 TASK_FULL`。
+6. assignment を `accepted` で作成。tasks を `in_progress` に更新。
 
 **レスポンス `201`**
 ```json
