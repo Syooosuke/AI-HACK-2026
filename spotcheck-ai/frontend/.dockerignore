@@ -1,0 +1,5 @@
+# イメージへ入れないもの
+node_modules/
+.next/
+.env.local
+npm-debug.log*

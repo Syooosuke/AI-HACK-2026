@@ -2,3 +2,6 @@
 
 # Claude Code が作る作業用ディレクトリ（git worktree 等）。リポジトリには含めない
 .claude/
+
+# デプロイ設定（秘密情報を含む）
+spotcheck-ai/deploy/env.sh
