@@ -22,6 +22,34 @@ export interface GMarker {
   addListener(event: "click", handler: () => void): void;
 }
 
+// ----------------------------------------------------------------------
+// ストリートビュー
+// ----------------------------------------------------------------------
+export interface GStreetViewLocation {
+  latLng?: GLatLng | null;
+  description?: string | null;
+}
+
+export interface GStreetViewPanoramaData {
+  location?: GStreetViewLocation | null;
+}
+
+export interface GStreetViewPanorama {
+  setPosition(position: LatLngLiteral): void;
+  setPov(pov: { heading: number; pitch: number }): void;
+  setVisible(visible: boolean): void;
+  getPosition(): GLatLng | null;
+  addListener(event: "position_changed", handler: () => void): void;
+}
+
+export interface GStreetViewService {
+  /** 指定地点の近くにパノラマがあるか調べる。無ければ status が "ZERO_RESULTS"。 */
+  getPanorama(
+    request: { location: LatLngLiteral; radius?: number },
+    callback: (data: GStreetViewPanoramaData | null, status: string) => void,
+  ): void;
+}
+
 export interface GeocoderResult {
   formatted_address: string;
   geometry?: { location: GLatLng };
@@ -128,6 +156,24 @@ export interface GMapsNamespace {
   };
   /** Places ライブラリ。Places API が有効でない場合は undefined になりうる。 */
   places?: GPlacesNamespace;
+  StreetViewPanorama: new (
+    element: HTMLElement,
+    options: {
+      position: LatLngLiteral;
+      pov?: { heading: number; pitch: number };
+      zoom?: number;
+      disableDefaultUI?: boolean;
+      addressControl?: boolean;
+      linksControl?: boolean;
+      panControl?: boolean;
+      zoomControl?: boolean;
+      fullscreenControl?: boolean;
+      motionTracking?: boolean;
+      motionTrackingControl?: boolean;
+    },
+  ) => GStreetViewPanorama;
+  StreetViewService: new () => GStreetViewService;
+  StreetViewStatus: { OK: string; ZERO_RESULTS: string; UNKNOWN_ERROR: string };
 }
 
 declare global {

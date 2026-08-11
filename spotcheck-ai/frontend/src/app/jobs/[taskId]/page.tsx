@@ -8,6 +8,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { StreetViewPanel } from "@/components/map/StreetViewPanel";
 import { CornerBadge } from "@/components/task/CornerBadge";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
@@ -166,6 +167,14 @@ export default function WorkerTaskDetailPage() {
             </ul>
           </Card>
         )}
+
+        <Card className="space-y-2">
+          <SectionTitle>現地の様子（ストリートビュー）</SectionTitle>
+          <p className="text-xs text-slate-500">
+            撮影地点の周辺を実景で確認できます。ドラッグで見回せます。
+          </p>
+          <StreetViewPanel position={{ lat: task.locationLat, lng: task.locationLng }} />
+        </Card>
 
         <Card>
           <InfoRow

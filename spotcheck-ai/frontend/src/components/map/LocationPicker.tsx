@@ -1,13 +1,17 @@
 "use client";
 
 /**
- * 地点ピッカー（依頼作成）。地名・住所での検索と、地図タップによるピン配置の両方に対応する。
+ * 地点ピッカー（依頼作成）。地名・住所での検索、地図タップ、ストリートビューに対応する。
+ *
+ * 地図だけでは「どこにピンを置けばよいか」が分かりにくいため、実景（ストリートビュー）でも
+ * 確認できるようにし、見えている場所をそのまま撮影地点として採用できるようにしている。
  * APIキー未設定・読み込み失敗時は緯度経度の手入力フォームへフォールバックする。
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
+import { StreetViewPanel } from "@/components/map/StreetViewPanel";
 import { useGoogleMaps } from "@/components/map/useGoogleMaps";
 import { env } from "@/lib/env";
 import { formatCoords } from "@/lib/geo";
@@ -30,6 +34,7 @@ export function LocationPicker({
   onChange: (next: PickedLocation) => void;
 }) {
   const status = useGoogleMaps();
+  const [tab, setTab] = useState<"map" | "street">("map");
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GMap | null>(null);
   const markerRef = useRef<GMarker | null>(null);
@@ -77,13 +82,60 @@ export function LocationPicker({
     onChangeRef.current({ ...position, address: place.address });
   };
 
+  /** ストリートビューで移動した位置をピンとして採用する。 */
+  const adoptStreetViewPosition = (position: { lat: number; lng: number }) => {
+    mapRef.current?.setCenter(position);
+    markerRef.current?.setPosition(position);
+    onChangeRef.current({ ...position, address: null });
+
+    // 住所は逆ジオコーディングで補完する（失敗しても座標だけで進める）
+    const maps = window.google?.maps;
+    if (!maps) return;
+    new maps.Geocoder().geocode({ location: position, language: "ja" }, (results, geocodeStatus) => {
+      if (geocodeStatus === "OK" && results?.[0]) {
+        onChangeRef.current({ ...position, address: results[0].formatted_address });
+      }
+    });
+  };
+
   if (status === "ready") {
     return (
       <div className="space-y-2">
         <PlaceSearchBox onSelect={applySearch} />
-        <div ref={containerRef} className="h-56 w-full overflow-hidden rounded-xl bg-slate-200 md:h-72" />
+
+        {/* 地図とストリートビューを切り替える。地図は非表示でも破棄しない
+            （Google Maps は要素を再利用する必要があるため hidden で残す） */}
+        <div className="flex rounded-xl bg-slate-100 p-1">
+          {(["map", "street"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
+                tab === key ? "bg-white text-client shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {key === "map" ? "地図" : "ストリートビュー"}
+            </button>
+          ))}
+        </div>
+
+        <div className={tab === "map" ? "" : "hidden"}>
+          <div
+            ref={containerRef}
+            className="h-56 w-full overflow-hidden rounded-xl bg-slate-200 md:h-72"
+          />
+        </div>
+        {tab === "street" && (
+          <StreetViewPanel
+            position={{ lat: value.lat, lng: value.lng }}
+            onAdopt={adoptStreetViewPosition}
+          />
+        )}
+
         <p className="text-xs text-slate-500">
-          検索するか、地図をタップしてピンを移動できます — {formatCoords(value.lat, value.lng)}
+          検索・地図のタップ・ストリートビューのいずれでもピンを決められます —{" "}
+          {formatCoords(value.lat, value.lng)}
         </p>
         {value.address && <p className="text-xs text-slate-600">{value.address}</p>}
       </div>

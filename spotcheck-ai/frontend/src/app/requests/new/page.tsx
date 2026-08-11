@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { LocationPicker, type PickedLocation } from "@/components/map/LocationPicker";
+import { PresetChips } from "@/components/task/PresetChips";
 import { Button, Card, SectionTitle } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
@@ -13,6 +14,7 @@ import { createTask } from "@/lib/api/tasks";
 import { isoToLocalInput, localInputToIso, minutesFromNow } from "@/lib/datetime";
 import { env } from "@/lib/env";
 import { saveReview } from "@/lib/reviewHandoff";
+import type { TaskPreset } from "@/lib/taskPresets";
 
 const MAX_REFERENCE_IMAGES = 3;
 const DESCRIPTION_MIN = 10;
@@ -61,6 +63,12 @@ export default function NewTaskPage() {
 
   const canSubmit = Object.keys(errors).length === 0 && !submitting;
 
+  /** タイトル側のチップ。詳細が空のときは詳細もまとめて埋める（入力の手間を減らす）。 */
+  const applyPresetToTitle = (preset: TaskPreset) => {
+    setTitle(preset.title);
+    if (!description.trim()) setDescription(preset.description);
+  };
+
   const onPickImages = (files: FileList | null) => {
     if (!files) return;
     const merged = [...images, ...Array.from(files)].slice(0, MAX_REFERENCE_IMAGES);
@@ -95,7 +103,7 @@ export default function NewTaskPage() {
       <h1 className="text-lg font-bold text-slate-800">依頼を作成</h1>
 
       <Card className="space-y-3">
-        <SectionTitle>1. 地図で地点を指定</SectionTitle>
+        <SectionTitle>1. 撮影地点を指定</SectionTitle>
         <LocationPicker value={location} onChange={setLocation} />
       </Card>
 
@@ -140,33 +148,49 @@ export default function NewTaskPage() {
         </Field>
       </Card>
 
-      <Card className="space-y-2">
-        <SectionTitle>5. 依頼タイトル</SectionTitle>
-        <Field label="" error={errors.title}>
-          <input
-            type="text"
-            value={title}
-            maxLength={TITLE_MAX}
-            placeholder="駅前の再開発工事の進捗確認"
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
-          />
-        </Field>
+      <Card className="space-y-4">
+        <div className="space-y-2">
+          <SectionTitle>5. 依頼タイトル</SectionTitle>
+          <p className="text-xs text-slate-500">
+            よくある依頼はタップで入力できます（詳細が空のときは詳細も一緒に入ります）
+          </p>
+          <PresetChips onPick={applyPresetToTitle} currentValue={title} field="title" />
+          <Field label="" error={errors.title}>
+            <input
+              type="text"
+              value={title}
+              maxLength={TITLE_MAX}
+              placeholder="駅前の再開発工事の進捗確認"
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+            />
+          </Field>
+        </div>
 
-        <SectionTitle>6. 詳細メッセージ</SectionTitle>
-        <Field label="" error={errors.description}>
-          <textarea
-            value={description}
-            rows={5}
-            maxLength={DESCRIPTION_MAX}
-            placeholder="周辺の工事状況や交通状況を確認してください。"
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+        <div className="space-y-2">
+          <SectionTitle>6. 詳細メッセージ</SectionTitle>
+          <p className="text-xs text-slate-500">
+            タップすると、その依頼でよく使う文章に置き換わります
+          </p>
+          <PresetChips
+            onPick={(preset) => setDescription(preset.description)}
+            currentValue={description}
+            field="description"
           />
-        </Field>
-        <p className="text-right text-xs text-slate-400">
-          {description.length} / {DESCRIPTION_MAX}
-        </p>
+          <Field label="" error={errors.description}>
+            <textarea
+              value={description}
+              rows={5}
+              maxLength={DESCRIPTION_MAX}
+              placeholder="周辺の工事状況や交通状況を確認してください。"
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+            />
+          </Field>
+          <p className="text-right text-xs text-slate-400">
+            {description.length} / {DESCRIPTION_MAX}
+          </p>
+        </div>
       </Card>
 
       <Card className="space-y-3">
