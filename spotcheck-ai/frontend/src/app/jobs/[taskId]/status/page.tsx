@@ -2,7 +2,11 @@
 
 /**
  * 画面⑦ AI画像検品・安全処理 ＋ 画面⑧ 再撮影フィードバック
- * （docs/05-frontend.md 画面⑦・⑧）。2秒間隔でポーリングする。
+ * （docs/05-frontend.md 画面⑦・⑧）。
+ *
+ * **検品は実測30秒〜15分かかる**ため、段階的バックオフでポーリングする
+ * （最初の30秒は2秒間隔 → 以降 5秒 → 15秒 → 30秒）。
+ * タブを離れている間はブラウザが setTimeout を抑制するので、復帰時に即座に1回取得する。
  */
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -17,12 +21,8 @@ import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { getSubmission } from "@/lib/api/submissions";
 import { getTask } from "@/lib/api/tasks";
+import { formatElapsed, nextPollInterval, shouldStopPolling } from "@/lib/polling";
 import type { SubmissionStatus } from "@/types/api";
-
-const POLL_INTERVAL_MS = 2000;
-//: 60秒で打ち切る（docs/06-phases.md Phase 6）
-const MAX_POLL_MS = 60_000;
-const MAX_POLL_ATTEMPTS = MAX_POLL_MS / POLL_INTERVAL_MS;
 
 export default function SubmissionStatusPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -32,7 +32,8 @@ export default function SubmissionStatusPage() {
   const [data, setData] = useState<SubmissionStatus | null>(null);
   const [reward, setReward] = useState<number | null>(null);
   const [stopped, setStopped] = useState(false);
-  const attemptsRef = useRef(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startedAtRef = useRef(Date.now());
 
   // 報酬確定の表示に依頼の報酬額を使う（docs/05-frontend.md 画面⑦）
   useEffect(() => {
@@ -41,11 +42,13 @@ export default function SubmissionStatusPage() {
       .catch(() => setReward(null));
   }, [taskId]);
 
+  /** 最新の検品状況を取得する。戻り値は「検品が終わったか」。 */
   const load = useCallback(async () => {
     if (!submissionId) return true;
     try {
       const next = await getSubmission(submissionId);
       setData(next);
+      // error も終了状態として扱う（再送信の案内を出すため、待ち続けない）
       return next.aiValidationStatus !== "pending" && next.aiValidationStatus !== "processing";
     } catch (cause) {
       toast.error(toMessage(cause));
@@ -57,22 +60,41 @@ export default function SubmissionStatusPage() {
     if (!submissionId) return;
     let timer: number | undefined;
     let active = true;
+    let finished = false;
+    startedAtRef.current = Date.now();
 
     const tick = async () => {
       const done = await load();
       if (!active) return;
-      attemptsRef.current += 1;
-      if (done || attemptsRef.current >= MAX_POLL_ATTEMPTS) {
+
+      const elapsed = Date.now() - startedAtRef.current;
+      setElapsedMs(elapsed);
+
+      if (done) {
+        finished = true;
+        return;
+      }
+      if (shouldStopPolling(elapsed)) {
+        finished = true;
         setStopped(true);
         return;
       }
-      timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
+      timer = window.setTimeout(() => void tick(), nextPollInterval(elapsed));
     };
     void tick();
+
+    // タブを離れている間は setTimeout が抑制されるため、復帰時に即座に取り直す
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || finished || !active) return;
+      if (timer) window.clearTimeout(timer);
+      void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       active = false;
       if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load, submissionId]);
 
@@ -119,8 +141,36 @@ export default function SubmissionStatusPage() {
         />
       </Card>
 
-      {processing && !stopped && <PollingIndicator label="2秒ごとに検品状況を確認しています" />}
-      {processing && stopped && <PollingIndicator stopped />}
+      {processing && !stopped && (
+        <PollingIndicator
+          label={`検品状況を確認しています（経過 ${formatElapsed(elapsedMs)}）`}
+          hint="AIの検品は30秒〜15分ほどかかります。このまま開いたままでも、閉じてあとから確認しても構いません。"
+        />
+      )}
+      {processing && stopped && (
+        <Card className="space-y-3 border-slate-300 bg-slate-100">
+          <p className="text-sm font-bold text-slate-700">自動更新を停止しました</p>
+          <p className="text-xs leading-relaxed text-slate-600">
+            検品に15分以上かかっています。結果は「受注した依頼」からいつでも確認できます。
+          </p>
+          <div className="flex gap-2">
+            <Button
+              accent="worker"
+              onClick={() => {
+                setStopped(false);
+                startedAtRef.current = Date.now();
+                setElapsedMs(0);
+                void load();
+              }}
+            >
+              もう一度確認する
+            </Button>
+            <Button accent="neutral" onClick={() => router.push("/jobs")}>
+              受注した依頼へ
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {approved && (
         <Card className="space-y-3 border-emerald-200 bg-emerald-50">
