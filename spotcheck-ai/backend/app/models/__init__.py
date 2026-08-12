@@ -10,11 +10,13 @@ from app.models.enums import (
     ACTIVE_ASSIGNMENT_STATUSES,
     PUBLIC_TASK_STATUSES,
     AssignmentStatus,
+    NotificationType,
     PaymentDirection,
     PaymentStatus,
     TaskStatus,
     ValidationStatus,
 )
+from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.saved_search import SavedSearch
 from app.models.submission import Submission
@@ -29,6 +31,8 @@ __all__ = [
     "AiInvocation",
     "AssignmentStatus",
     "Base",
+    "Notification",
+    "NotificationType",
     "Payment",
     "PaymentDirection",
     "PaymentStatus",
