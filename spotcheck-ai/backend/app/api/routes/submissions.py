@@ -11,7 +11,8 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile, status
 from app.api.deps import CurrentUser, DbSession
 from app.core.storage import get_storage
 from app.schemas.submission import SubmissionCreateResponse, SubmissionStatusResponse
-from app.services import submission_pipeline, submission_service
+from app.schemas.worker_review import WorkerReviewCreate, WorkerReviewResponse
+from app.services import submission_pipeline, submission_service, worker_review_service
 from app.services.submission_service import SubmissionInput
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
@@ -60,4 +61,21 @@ async def get_submission(
     """検品状況・結果のポーリング（画面⑦⑧）。"""
     return await submission_service.get_submission_status(
         session, user=user, submission_id=submission_id, storage=get_storage()
+    )
+
+
+@router.post(
+    "/{submission_id}/review",
+    response_model=WorkerReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def review_worker(
+    session: DbSession,
+    user: CurrentUser,
+    submission_id: uuid.UUID,
+    payload: WorkerReviewCreate,
+) -> WorkerReviewResponse:
+    """合格済み提出を担当したワーカーを依頼者が評価する。"""
+    return worker_review_service.create_review(
+        session, reviewer=user, submission_id=submission_id, payload=payload
     )

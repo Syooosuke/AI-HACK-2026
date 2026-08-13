@@ -15,6 +15,7 @@ class WorkerSummary(CamelModel):
     5段階への換算は行わない）。`avatar_url` はアバターの配信URL。
     """
 
+    id: uuid.UUID
     display_name: str
     trust_score: float
     avatar_url: str | None = None
@@ -43,6 +44,8 @@ class WorkerStats(CamelModel):
 
     trust_score: float
     approved_submission_count: int
+    average_rating: float | None = None
+    review_count: int = 0
 
 
 class PublicProfile(CamelModel):

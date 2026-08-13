@@ -50,6 +50,7 @@ from app.core.security import create_access_token, hash_password
 from app.models import Base, Task, TaskAssignment, User
 
 TABLES_IN_TRUNCATE_ORDER = (
+    "worker_reviews",
     "payments",
     "ai_invocations",
     "submissions",

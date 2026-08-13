@@ -30,6 +30,7 @@ from app.schemas.task import (
     NearbyTask,
     ReferenceImage,
     TaskDetail,
+    TaskDuplicateRequest,
     TaskListItem,
     TaskResubmitRequest,
     TaskReviewResponse,
@@ -48,6 +49,9 @@ REFERENCE_IMAGE_PREFIX = "task-reference"
 
 #: 依頼取消が可能な status（docs/03-api.md 3.9）
 CANCELLABLE_STATUSES = (TaskStatus.SCREENING, TaskStatus.NEEDS_INFO, TaskStatus.OPEN)
+
+#: 依頼者が提出期限を延長できる status。終了済みの依頼は変更しない。
+DEADLINE_EXTENDABLE_STATUSES = (TaskStatus.OPEN, TaskStatus.IN_PROGRESS)
 
 
 @dataclass
@@ -142,6 +146,48 @@ async def resubmit_task(
     return TaskReviewResponse(task=_to_summary(task), review=outcome.review)
 
 
+async def duplicate_task(
+    session: Session,
+    *,
+    client: User,
+    source_task_id: uuid.UUID,
+    payload: TaskDuplicateRequest,
+    storage: StorageBackend,
+    orca: OrcaClient,
+) -> TaskReviewResponse:
+    """本人の過去依頼を日時だけ差し替え、独立した新規依頼として審査する。"""
+    source = _get_owned_task(session, source_task_id, client)
+    _validate_schedule(payload.scheduled_at, payload.deadline_at)
+
+    duplicate = Task(
+        client_id=client.id,
+        title=source.title,
+        description=source.description,
+        location_lat=source.location_lat,
+        location_lng=source.location_lng,
+        location_address=source.location_address,
+        scheduled_at=payload.scheduled_at,
+        deadline_at=payload.deadline_at,
+        reward_amount=source.reward_amount,
+        required_worker_count=source.required_worker_count,
+        status=TaskStatus.SCREENING,
+    )
+    task_repo.create(session, duplicate)
+
+    # 参考画像は配信用ストレージ上の不変なオブジェクトなので、再アップロードせず参照を共有する。
+    for reference in source.reference_images:
+        task_repo.add_reference_image(
+            session,
+            task_id=duplicate.id,
+            image_url=reference.image_url,
+            sort_order=reference.sort_order,
+        )
+    session.refresh(duplicate)
+
+    outcome = await task_review.review_task(session, duplicate, orca, storage)
+    return TaskReviewResponse(task=_to_summary(duplicate), review=outcome.review)
+
+
 # ----------------------------------------------------------------------
 # 受注・取消
 # ----------------------------------------------------------------------
@@ -199,6 +245,96 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
         retake_count=assignment.retake_count,
         remaining_retakes=settings.max_retake_count - assignment.retake_count,
     )
+
+
+def withdraw_assignment(session: Session, *, worker: User, task_id: uuid.UUID) -> AssignmentDetail:
+    """未提出の受注を辞退し、占有していた募集枠を再開放する。"""
+    task = task_repo.get_for_update(session, task_id)
+    if task is None:
+        raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
+
+    assignment = assignment_repo.get_by_task_and_worker(
+        session, task_id=task_id, worker_id=worker.id
+    )
+    if assignment is None:
+        raise NotFound("この依頼の受注情報が見つかりません。", code="ASSIGNMENT_NOT_FOUND")
+    if assignment.status is not AssignmentStatus.ACCEPTED:
+        raise Conflict(
+            "撮影を提出する前の依頼のみ辞退できます。",
+            code="INVALID_STATE",
+        )
+    if submission_repo.latest_by_assignment(session, assignment.id) is not None:
+        raise Conflict(
+            "撮影を一度でも提出した依頼は辞退できません。",
+            code="INVALID_STATE",
+        )
+
+    assignment.status = AssignmentStatus.CANCELLED
+    assignment.completed_at = datetime.now(UTC)
+    session.flush()
+    reopen_if_slot_available(session, task)
+    session.flush()
+
+    logger.info(
+        "ワーカーが受注を辞退しました",
+        extra={"task_id": str(task_id), "worker_id": str(worker.id)},
+    )
+    return AssignmentDetail(
+        id=assignment.id,
+        task_id=task_id,
+        status=assignment.status,
+        retake_count=assignment.retake_count,
+        remaining_retakes=get_settings().max_retake_count - assignment.retake_count,
+    )
+
+
+def extend_deadline(
+    session: Session,
+    *,
+    client: User,
+    task_id: uuid.UUID,
+    new_deadline_at: datetime,
+) -> TaskSummary:
+    """依頼者が公開中・進行中の依頼の提出期限を後ろへ延ばす。"""
+    task = task_repo.get_for_update(session, task_id)
+    if task is None:
+        raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
+    if task.client_id != client.id:
+        raise Forbidden("この依頼を変更する権限がありません。")
+    if task.status not in DEADLINE_EXTENDABLE_STATUSES:
+        raise Conflict(
+            "募集中または進行中の依頼のみ期限を延長できます。",
+            code="INVALID_STATE",
+        )
+    if task.deadline_at <= datetime.now(UTC):
+        raise Conflict(
+            "期限を過ぎた依頼は延長できません。",
+            code="INVALID_STATE",
+        )
+    if new_deadline_at <= task.deadline_at:
+        raise ValidationError(
+            "新しい提出期限は現在の期限より後を指定してください。",
+            details={"field": "deadlineAt"},
+        )
+    if new_deadline_at <= datetime.now(UTC):
+        raise ValidationError(
+            "新しい提出期限は現在時刻より後を指定してください。",
+            details={"field": "deadlineAt"},
+        )
+
+    old_deadline_at = task.deadline_at
+    task.deadline_at = new_deadline_at
+    session.flush()
+    logger.info(
+        "依頼の提出期限を延長しました",
+        extra={
+            "task_id": str(task_id),
+            "client_id": str(client.id),
+            "old_deadline_at": old_deadline_at.isoformat(),
+            "new_deadline_at": new_deadline_at.isoformat(),
+        },
+    )
+    return _to_summary(task)
 
 
 def cancel_task(session: Session, *, client: User, task_id: uuid.UUID) -> TaskSummary:

@@ -75,11 +75,15 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | GET | `/api/users/{userId}/avatar` | - | アイコン画像の配信（`<img>` から直接読む） |
 | GET | `/api/users/{userId}/public` | 必須 | 公開プロフィール（閲覧用） |
 | POST | `/api/tasks` | 必須 | 依頼作成＋AI審査（同期） |
+| POST | `/api/tasks/generate-description` | 必須 | 依頼タイトルから短い詳細メッセージをAI生成 |
 | POST | `/api/tasks/{taskId}/resubmit` | 必須 | 補足情報を追記して再審査（オーナーのみ） |
+| POST | `/api/tasks/{taskId}/duplicate` | 必須 | 過去の依頼を日時だけ変更して再投稿（オーナーのみ） |
 | GET | `/api/tasks` | 必須 | 自分が出した依頼の一覧 |
 | GET | `/api/tasks/{taskId}` | 必須 | 依頼詳細＋進行状況 |
 | GET | `/api/tasks/nearby` | 必須 | 近傍の公開依頼一覧（自分の依頼は除く） |
 | POST | `/api/tasks/{taskId}/accept` | 必須 | 受注（自分の依頼は不可） |
+| POST | `/api/tasks/{taskId}/withdraw` | 必須 | 撮影提出前の受注辞退・募集枠の再開放 |
+| POST | `/api/tasks/{taskId}/extend-deadline` | 必須 | 公開中・進行中の依頼の提出期限を延長（オーナーのみ） |
 | POST | `/api/tasks/{taskId}/cancel` | 必須 | 依頼取消（オーナーのみ） |
 | GET | `/api/assignments/mine` | 必須 | 自分の受注一覧 |
 | POST | `/api/submissions` | 必須 | 画像＋メタデータ提出 |

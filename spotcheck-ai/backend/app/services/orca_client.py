@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 
 Purpose = Literal[
     "task_review",
+    "task_description_generation",
     "image_validation",
     "environment_check",
     "result_summary",
@@ -706,6 +707,12 @@ def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
             "rejection_reason": None,
             "missing_info": [],
             "summary": "現地の状況を撮影して確認する依頼です。",
+        }
+
+    if purpose == "task_description_generation":
+        title = str(context.get("title") or "指定された対象")
+        return {
+            "description": f"{title}について、対象の全体と現在の状態が分かるように正面から撮影してください。"
         }
 
     if purpose == "image_validation":

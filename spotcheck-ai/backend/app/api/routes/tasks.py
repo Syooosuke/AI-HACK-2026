@@ -20,16 +20,32 @@ from app.schemas.task import (
     CancelTaskResponse,
     MyAssignmentListResponse,
     NearbyTaskListResponse,
+    TaskDeadlineExtensionRequest,
+    TaskDeadlineExtensionResponse,
+    TaskDescriptionGenerationRequest,
+    TaskDescriptionGenerationResponse,
     TaskDetail,
+    TaskDuplicateRequest,
     TaskListResponse,
     TaskResubmitRequest,
     TaskReviewResponse,
+    WithdrawAssignmentResponse,
 )
-from app.services import submission_service, task_service, thumbnail_service
+from app.services import submission_service, task_description, task_service, thumbnail_service
 from app.services.orca_client import get_orca_client
 from app.services.task_service import TaskCreateInput
 
 router = APIRouter(prefix="/api", tags=["tasks"])
+
+
+@router.post("/tasks/generate-description", response_model=TaskDescriptionGenerationResponse)
+async def generate_task_description(
+    payload: TaskDescriptionGenerationRequest,
+    _user: CurrentUser,
+) -> TaskDescriptionGenerationResponse:
+    """依頼タイトルから短い詳細メッセージをAI生成する。"""
+    description = await task_description.generate(payload.title, get_orca_client())
+    return TaskDescriptionGenerationResponse(description=description)
 
 
 @router.post("/tasks", response_model=TaskReviewResponse, status_code=status.HTTP_201_CREATED)
@@ -78,6 +94,32 @@ def _schedule_thumbnail(background_tasks: BackgroundTasks, response: TaskReviewR
     """公開された依頼だけサムネイル生成を予約する（却下・情報補足待ちは作らない）。"""
     if response.task.status is TaskStatus.OPEN:
         background_tasks.add_task(thumbnail_service.generate_for_task, response.task.id)
+
+
+@router.post(
+    "/tasks/{task_id}/duplicate",
+    response_model=TaskReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_task(
+    session: DbSession,
+    client: CurrentUser,
+    background_tasks: BackgroundTasks,
+    task_id: uuid.UUID,
+    payload: TaskDuplicateRequest,
+) -> TaskReviewResponse:
+    """過去の依頼をテンプレートとして、日時だけ変更して再投稿する。"""
+    response = await task_service.duplicate_task(
+        session,
+        client=client,
+        source_task_id=task_id,
+        payload=payload,
+        storage=get_storage(),
+        orca=get_orca_client(),
+    )
+    session.commit()
+    _schedule_thumbnail(background_tasks, response)
+    return response
 
 
 @router.get("/tasks", response_model=TaskListResponse)
@@ -160,6 +202,34 @@ def accept_task(session: DbSession, worker: CurrentUser, task_id: uuid.UUID) -> 
     """受注（画面⑤）。枠の超過は 409 TASK_FULL。"""
     return AcceptTaskResponse(
         assignment=task_service.accept_task(session, worker=worker, task_id=task_id)
+    )
+
+
+@router.post("/tasks/{task_id}/withdraw", response_model=WithdrawAssignmentResponse)
+def withdraw_assignment(
+    session: DbSession, worker: CurrentUser, task_id: uuid.UUID
+) -> WithdrawAssignmentResponse:
+    """撮影提出前の受注を辞退し、募集枠を戻す。"""
+    return WithdrawAssignmentResponse(
+        assignment=task_service.withdraw_assignment(session, worker=worker, task_id=task_id)
+    )
+
+
+@router.post("/tasks/{task_id}/extend-deadline", response_model=TaskDeadlineExtensionResponse)
+def extend_task_deadline(
+    session: DbSession,
+    client: CurrentUser,
+    task_id: uuid.UUID,
+    payload: TaskDeadlineExtensionRequest,
+) -> TaskDeadlineExtensionResponse:
+    """公開中・進行中の依頼について、依頼者が提出期限を延長する。"""
+    return TaskDeadlineExtensionResponse(
+        task=task_service.extend_deadline(
+            session,
+            client=client,
+            task_id=task_id,
+            new_deadline_at=payload.deadline_at,
+        )
     )
 
 

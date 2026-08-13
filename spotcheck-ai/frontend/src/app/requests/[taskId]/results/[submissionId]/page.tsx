@@ -3,6 +3,7 @@
 /** 画面⑩ 結果詳細 / レポート（docs/05-frontend.md 画面⑩）。 */
 
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, EmptyState, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
@@ -12,9 +13,17 @@ import { TrustBar, TrustGauge } from "@/components/ui/TrustGauge";
 import { toMessage } from "@/lib/api/errorMessages";
 import { resolveApiUrl } from "@/lib/api/client";
 import { getTask, getTaskResults } from "@/lib/api/tasks";
+import { createWorkerReview } from "@/lib/api/submissions";
 import { formatDateTime } from "@/lib/datetime";
 import { formatCoords } from "@/lib/geo";
-import type { TaskDetail, TaskResultItem } from "@/types/api";
+import type { TaskDetail, TaskResultItem, WorkerReviewTag } from "@/types/api";
+
+const REVIEW_TAGS: Array<{ value: WorkerReviewTag; label: string }> = [
+  { value: "as_requested", label: "依頼どおり" },
+  { value: "clear_photo", label: "写真が見やすい" },
+  { value: "fast_response", label: "対応が早い" },
+  { value: "accurate_location", label: "位置情報が正確" },
+];
 
 export default function ResultDetailPage() {
   const { taskId, submissionId } = useParams<{ taskId: string; submissionId: string }>();
@@ -22,6 +31,10 @@ export default function ResultDetailPage() {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [result, setResult] = useState<TaskResultItem | null | undefined>(undefined);
   const [openBreakdown, setOpenBreakdown] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [reviewTags, setReviewTags] = useState<WorkerReviewTag[]>([]);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewing, setReviewing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +50,24 @@ export default function ResultDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const submitReview = async () => {
+    if (!result || rating === 0) return;
+    setReviewing(true);
+    try {
+      const review = await createWorkerReview(result.submissionId, {
+        rating,
+        tags: reviewTags,
+        comment: reviewComment.trim() || undefined,
+      });
+      setResult({ ...result, workerReview: review });
+      toast.success("ワーカーを評価しました。");
+    } catch (cause) {
+      toast.error(toMessage(cause));
+    } finally {
+      setReviewing(false);
+    }
+  };
 
   if (result === undefined) {
     return (
@@ -149,6 +180,93 @@ export default function ResultDetailPage() {
             <p className="text-xs text-slate-500">信頼度スコア</p>
           </div>
           <TrustGauge score={result.worker.trustScore} label="ワーカーの信頼度スコア" size="sm" />
+        </div>
+        <Link
+          href={`/users/${result.worker.id}`}
+          className="mt-3 block text-right text-xs font-bold text-client underline"
+        >
+          プロフィールを見る
+        </Link>
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          {result.workerReview ? (
+            <div className="space-y-2">
+              <p className="text-lg tracking-wide text-amber-400" aria-label={`${result.workerReview.rating}つ星`}>
+                {"★".repeat(result.workerReview.rating)}
+                <span className="text-slate-200">{"★".repeat(5 - result.workerReview.rating)}</span>
+              </p>
+              {result.workerReview.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {result.workerReview.tags.map((tag) => (
+                    <span key={tag} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
+                      {REVIEW_TAGS.find((item) => item.value === tag)?.label ?? tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {result.workerReview.comment && (
+                <p className="text-sm text-slate-600">{result.workerReview.comment}</p>
+              )}
+              <p className="text-xs text-slate-400">評価済みです</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-bold text-slate-700">今回の仕事を評価する</p>
+              <div className="flex gap-1" role="group" aria-label="星評価">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRating(star)}
+                    className={`text-3xl ${star <= rating ? "text-amber-400" : "text-slate-200"}`}
+                    aria-label={`${star}つ星`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {REVIEW_TAGS.map((tag) => {
+                  const selected = reviewTags.includes(tag.value);
+                  return (
+                    <button
+                      key={tag.value}
+                      type="button"
+                      onClick={() =>
+                        setReviewTags((current) =>
+                          selected
+                            ? current.filter((value) => value !== tag.value)
+                            : [...current, tag.value],
+                        )
+                      }
+                      className={`rounded-full border px-3 py-1.5 text-xs ${
+                        selected
+                          ? "border-amber-400 bg-amber-50 text-amber-800"
+                          : "border-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <textarea
+                rows={3}
+                maxLength={500}
+                value={reviewComment}
+                onChange={(event) => setReviewComment(event.target.value)}
+                placeholder="コメント（任意）"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+              />
+              <Button
+                accent="client"
+                disabled={rating === 0}
+                loading={reviewing}
+                onClick={() => void submitReview()}
+              >
+                評価を送信
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 

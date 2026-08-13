@@ -23,6 +23,13 @@ export type CreateTaskInput = {
   referenceImages: File[];
 };
 
+export function generateTaskDescription(title: string): Promise<{ description: string }> {
+  return apiFetch<{ description: string }>("/api/tasks/generate-description", {
+    method: "POST",
+    body: { title },
+  });
+}
+
 /** `POST /api/tasks`（画面①→②）。AI審査が同期実行されるため時間がかかる。 */
 export function createTask(input: CreateTaskInput): Promise<TaskReviewResponse> {
   const form = new FormData();
@@ -37,6 +44,16 @@ export function createTask(input: CreateTaskInput): Promise<TaskReviewResponse> 
   form.set("requiredWorkerCount", String(input.requiredWorkerCount));
   input.referenceImages.forEach((file) => form.append("referenceImages", file));
   return apiFetch<TaskReviewResponse>("/api/tasks", { method: "POST", body: form });
+}
+
+export function duplicateTask(
+  taskId: string,
+  payload: { scheduledAt: string; deadlineAt: string },
+): Promise<TaskReviewResponse> {
+  return apiFetch<TaskReviewResponse>(`/api/tasks/${taskId}/duplicate`, {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function resubmitTask(
@@ -81,6 +98,22 @@ export function listNearbyTasks(query: NearbyQuery): Promise<{ tasks: NearbyTask
 export function acceptTask(taskId: string): Promise<{ assignment: AssignmentDetail }> {
   return apiFetch<{ assignment: AssignmentDetail }>(`/api/tasks/${taskId}/accept`, {
     method: "POST",
+  });
+}
+
+export function withdrawAssignment(taskId: string): Promise<{ assignment: AssignmentDetail }> {
+  return apiFetch<{ assignment: AssignmentDetail }>(`/api/tasks/${taskId}/withdraw`, {
+    method: "POST",
+  });
+}
+
+export function extendTaskDeadline(
+  taskId: string,
+  deadlineAt: string,
+): Promise<{ task: TaskSummary }> {
+  return apiFetch<{ task: TaskSummary }>(`/api/tasks/${taskId}/extend-deadline`, {
+    method: "POST",
+    body: { deadlineAt },
   });
 }
 

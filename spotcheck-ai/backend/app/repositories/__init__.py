@@ -9,6 +9,7 @@ from app.repositories import (
     submission_repo,
     task_repo,
     user_repo,
+    worker_review_repo,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "submission_repo",
     "task_repo",
     "user_repo",
+    "worker_review_repo",
 ]

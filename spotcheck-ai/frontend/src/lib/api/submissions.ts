@@ -1,5 +1,10 @@
 import { apiFetch } from "@/lib/api/client";
-import type { SubmissionCreateResponse, SubmissionStatus } from "@/types/api";
+import type {
+  SubmissionCreateResponse,
+  SubmissionStatus,
+  WorkerReview,
+  WorkerReviewTag,
+} from "@/types/api";
 
 export type SubmitInput = {
   assignmentId: string;
@@ -31,4 +36,14 @@ export function createSubmission(input: SubmitInput): Promise<SubmissionCreateRe
 
 export function getSubmission(submissionId: string): Promise<SubmissionStatus> {
   return apiFetch<SubmissionStatus>(`/api/submissions/${submissionId}`);
+}
+
+export function createWorkerReview(
+  submissionId: string,
+  input: { rating: number; tags: WorkerReviewTag[]; comment?: string },
+): Promise<WorkerReview> {
+  return apiFetch<WorkerReview>(`/api/submissions/${submissionId}/review`, {
+    method: "POST",
+    body: input,
+  });
 }

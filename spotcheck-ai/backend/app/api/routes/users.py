@@ -19,9 +19,16 @@ from app.core.storage import get_storage
 from app.repositories import user_repo
 from app.schemas.auth import MeResponse
 from app.schemas.user import PublicProfile
-from app.services import auth_service, avatar_service, user_service
+from app.schemas.worker_review import ReceivedWorkerReviewList
+from app.services import auth_service, avatar_service, user_service, worker_review_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+@router.get("/me/reviews", response_model=ReceivedWorkerReviewList)
+def get_my_received_reviews(session: DbSession, user: CurrentUser) -> ReceivedWorkerReviewList:
+    """自分がワーカーとして受け取った評価を匿名で返す。"""
+    return worker_review_service.list_received_reviews(session, worker=user)
 
 
 @router.post("/me/avatar", response_model=MeResponse)
