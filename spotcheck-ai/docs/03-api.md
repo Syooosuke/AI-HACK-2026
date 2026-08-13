@@ -76,6 +76,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | GET | `/api/users/{userId}/public` | 必須 | 公開プロフィール（閲覧用） |
 | POST | `/api/tasks` | 必須 | 依頼作成＋AI審査（同期） |
 | POST | `/api/tasks/{taskId}/resubmit` | 必須 | 補足情報を追記して再審査（オーナーのみ） |
+| POST | `/api/tasks/{taskId}/duplicate` | 必須 | 過去の依頼を日時だけ変更して再投稿（オーナーのみ） |
 | GET | `/api/tasks` | 必須 | 自分が出した依頼の一覧 |
 | GET | `/api/tasks/{taskId}` | 必須 | 依頼詳細＋進行状況 |
 | GET | `/api/tasks/nearby` | 必須 | 近傍の公開依頼一覧（自分の依頼は除く） |

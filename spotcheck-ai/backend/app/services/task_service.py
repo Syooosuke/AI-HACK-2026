@@ -29,6 +29,7 @@ from app.schemas.task import (
     NearbyTask,
     ReferenceImage,
     TaskDetail,
+    TaskDuplicateRequest,
     TaskListItem,
     TaskResubmitRequest,
     TaskReviewResponse,
@@ -139,6 +140,48 @@ async def resubmit_task(
 
     outcome = await task_review.review_task(session, task, orca, storage)
     return TaskReviewResponse(task=_to_summary(task), review=outcome.review)
+
+
+async def duplicate_task(
+    session: Session,
+    *,
+    client: User,
+    source_task_id: uuid.UUID,
+    payload: TaskDuplicateRequest,
+    storage: StorageBackend,
+    orca: OrcaClient,
+) -> TaskReviewResponse:
+    """本人の過去依頼を日時だけ差し替え、独立した新規依頼として審査する。"""
+    source = _get_owned_task(session, source_task_id, client)
+    _validate_schedule(payload.scheduled_at, payload.deadline_at)
+
+    duplicate = Task(
+        client_id=client.id,
+        title=source.title,
+        description=source.description,
+        location_lat=source.location_lat,
+        location_lng=source.location_lng,
+        location_address=source.location_address,
+        scheduled_at=payload.scheduled_at,
+        deadline_at=payload.deadline_at,
+        reward_amount=source.reward_amount,
+        required_worker_count=source.required_worker_count,
+        status=TaskStatus.SCREENING,
+    )
+    task_repo.create(session, duplicate)
+
+    # 参考画像は配信用ストレージ上の不変なオブジェクトなので、再アップロードせず参照を共有する。
+    for reference in source.reference_images:
+        task_repo.add_reference_image(
+            session,
+            task_id=duplicate.id,
+            image_url=reference.image_url,
+            sort_order=reference.sort_order,
+        )
+    session.refresh(duplicate)
+
+    outcome = await task_review.review_task(session, duplicate, orca, storage)
+    return TaskReviewResponse(task=_to_summary(duplicate), review=outcome.review)
 
 
 # ----------------------------------------------------------------------

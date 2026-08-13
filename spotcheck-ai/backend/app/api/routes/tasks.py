@@ -21,6 +21,7 @@ from app.schemas.task import (
     MyAssignmentListResponse,
     NearbyTaskListResponse,
     TaskDetail,
+    TaskDuplicateRequest,
     TaskListResponse,
     TaskResubmitRequest,
     TaskReviewResponse,
@@ -78,6 +79,32 @@ def _schedule_thumbnail(background_tasks: BackgroundTasks, response: TaskReviewR
     """公開された依頼だけサムネイル生成を予約する（却下・情報補足待ちは作らない）。"""
     if response.task.status is TaskStatus.OPEN:
         background_tasks.add_task(thumbnail_service.generate_for_task, response.task.id)
+
+
+@router.post(
+    "/tasks/{task_id}/duplicate",
+    response_model=TaskReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_task(
+    session: DbSession,
+    client: CurrentUser,
+    background_tasks: BackgroundTasks,
+    task_id: uuid.UUID,
+    payload: TaskDuplicateRequest,
+) -> TaskReviewResponse:
+    """過去の依頼をテンプレートとして、日時だけ変更して再投稿する。"""
+    response = await task_service.duplicate_task(
+        session,
+        client=client,
+        source_task_id=task_id,
+        payload=payload,
+        storage=get_storage(),
+        orca=get_orca_client(),
+    )
+    session.commit()
+    _schedule_thumbnail(background_tasks, response)
+    return response
 
 
 @router.get("/tasks", response_model=TaskListResponse)
