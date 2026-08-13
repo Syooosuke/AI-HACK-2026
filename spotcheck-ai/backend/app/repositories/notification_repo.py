@@ -54,17 +54,31 @@ def count_unread(session: Session, user_id: uuid.UUID) -> int:
 
 
 def mark_read(session: Session, *, user_id: uuid.UUID, notification_id: uuid.UUID) -> bool:
-    """既読にする。対象が無ければ False（他人の通知IDを指定した場合も含む）。"""
+    """既読にする。対象が無ければ False（他人の通知IDを指定した場合も含む）。
+
+    **すでに既読でも True を返す（冪等）。** 未読の行だけを対象にすると、
+    同じ通知を2回タップしたときに「見つからない」と誤判定してしまう。
+    """
     stmt = (
         update(Notification)
         .where(
             Notification.id == notification_id,
             Notification.user_id == user_id,
+            # 既読の時刻は最初に読んだ時点を保つ（上書きしない）
             Notification.read_at.is_(None),
         )
         .values(read_at=datetime.now(UTC))
     )
-    return (session.execute(stmt).rowcount or 0) > 0
+    if (session.execute(stmt).rowcount or 0) > 0:
+        return True
+
+    # 更新対象が無かった場合、「既読済み」と「他人の通知・存在しない」を区別する
+    exists = session.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(Notification.id == notification_id, Notification.user_id == user_id)
+    )
+    return bool(exists)
 
 
 def mark_all_read(session: Session, user_id: uuid.UUID) -> int:
