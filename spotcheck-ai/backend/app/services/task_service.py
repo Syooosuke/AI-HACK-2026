@@ -49,6 +49,9 @@ REFERENCE_IMAGE_PREFIX = "task-reference"
 #: 依頼取消が可能な status（docs/03-api.md 3.9）
 CANCELLABLE_STATUSES = (TaskStatus.SCREENING, TaskStatus.NEEDS_INFO, TaskStatus.OPEN)
 
+#: 依頼者が提出期限を延長できる status。終了済みの依頼は変更しない。
+DEADLINE_EXTENDABLE_STATUSES = (TaskStatus.OPEN, TaskStatus.IN_PROGRESS)
+
 
 @dataclass
 class TaskCreateInput:
@@ -274,6 +277,55 @@ def withdraw_assignment(session: Session, *, worker: User, task_id: uuid.UUID) -
         retake_count=assignment.retake_count,
         remaining_retakes=get_settings().max_retake_count - assignment.retake_count,
     )
+
+
+def extend_deadline(
+    session: Session,
+    *,
+    client: User,
+    task_id: uuid.UUID,
+    new_deadline_at: datetime,
+) -> TaskSummary:
+    """依頼者が公開中・進行中の依頼の提出期限を後ろへ延ばす。"""
+    task = task_repo.get_for_update(session, task_id)
+    if task is None:
+        raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
+    if task.client_id != client.id:
+        raise Forbidden("この依頼を変更する権限がありません。")
+    if task.status not in DEADLINE_EXTENDABLE_STATUSES:
+        raise Conflict(
+            "募集中または進行中の依頼のみ期限を延長できます。",
+            code="INVALID_STATE",
+        )
+    if task.deadline_at <= datetime.now(UTC):
+        raise Conflict(
+            "期限を過ぎた依頼は延長できません。",
+            code="INVALID_STATE",
+        )
+    if new_deadline_at <= task.deadline_at:
+        raise ValidationError(
+            "新しい提出期限は現在の期限より後を指定してください。",
+            details={"field": "deadlineAt"},
+        )
+    if new_deadline_at <= datetime.now(UTC):
+        raise ValidationError(
+            "新しい提出期限は現在時刻より後を指定してください。",
+            details={"field": "deadlineAt"},
+        )
+
+    old_deadline_at = task.deadline_at
+    task.deadline_at = new_deadline_at
+    session.flush()
+    logger.info(
+        "依頼の提出期限を延長しました",
+        extra={
+            "task_id": str(task_id),
+            "client_id": str(client.id),
+            "old_deadline_at": old_deadline_at.isoformat(),
+            "new_deadline_at": new_deadline_at.isoformat(),
+        },
+    )
+    return _to_summary(task)
 
 
 def cancel_task(session: Session, *, client: User, task_id: uuid.UUID) -> TaskSummary:

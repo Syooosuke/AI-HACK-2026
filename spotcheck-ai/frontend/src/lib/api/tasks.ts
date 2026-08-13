@@ -100,6 +100,16 @@ export function withdrawAssignment(taskId: string): Promise<{ assignment: Assign
   });
 }
 
+export function extendTaskDeadline(
+  taskId: string,
+  deadlineAt: string,
+): Promise<{ task: TaskSummary }> {
+  return apiFetch<{ task: TaskSummary }>(`/api/tasks/${taskId}/extend-deadline`, {
+    method: "POST",
+    body: { deadlineAt },
+  });
+}
+
 export function cancelTask(taskId: string): Promise<{ task: TaskSummary }> {
   return apiFetch<{ task: TaskSummary }>(`/api/tasks/${taskId}/cancel`, { method: "POST" });
 }

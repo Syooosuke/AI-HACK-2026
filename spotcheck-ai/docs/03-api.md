@@ -82,6 +82,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | GET | `/api/tasks/nearby` | 必須 | 近傍の公開依頼一覧（自分の依頼は除く） |
 | POST | `/api/tasks/{taskId}/accept` | 必須 | 受注（自分の依頼は不可） |
 | POST | `/api/tasks/{taskId}/withdraw` | 必須 | 撮影提出前の受注辞退・募集枠の再開放 |
+| POST | `/api/tasks/{taskId}/extend-deadline` | 必須 | 公開中・進行中の依頼の提出期限を延長（オーナーのみ） |
 | POST | `/api/tasks/{taskId}/cancel` | 必須 | 依頼取消（オーナーのみ） |
 | GET | `/api/assignments/mine` | 必須 | 自分の受注一覧 |
 | POST | `/api/submissions` | 必須 | 画像＋メタデータ提出 |

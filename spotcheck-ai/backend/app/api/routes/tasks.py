@@ -20,6 +20,8 @@ from app.schemas.task import (
     CancelTaskResponse,
     MyAssignmentListResponse,
     NearbyTaskListResponse,
+    TaskDeadlineExtensionRequest,
+    TaskDeadlineExtensionResponse,
     TaskDetail,
     TaskDuplicateRequest,
     TaskListResponse,
@@ -198,6 +200,24 @@ def withdraw_assignment(
     """撮影提出前の受注を辞退し、募集枠を戻す。"""
     return WithdrawAssignmentResponse(
         assignment=task_service.withdraw_assignment(session, worker=worker, task_id=task_id)
+    )
+
+
+@router.post("/tasks/{task_id}/extend-deadline", response_model=TaskDeadlineExtensionResponse)
+def extend_task_deadline(
+    session: DbSession,
+    client: CurrentUser,
+    task_id: uuid.UUID,
+    payload: TaskDeadlineExtensionRequest,
+) -> TaskDeadlineExtensionResponse:
+    """公開中・進行中の依頼について、依頼者が提出期限を延長する。"""
+    return TaskDeadlineExtensionResponse(
+        task=task_service.extend_deadline(
+            session,
+            client=client,
+            task_id=task_id,
+            new_deadline_at=payload.deadline_at,
+        )
     )
 
 
