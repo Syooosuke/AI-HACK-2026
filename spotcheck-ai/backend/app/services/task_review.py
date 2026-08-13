@@ -13,12 +13,13 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.storage import StorageBackend
-from app.models import Task, TaskStatus
+from app.models import NotificationType, Task, TaskStatus
 from app.models.task import MAX_REFERENCE_IMAGES
 from app.prompts.task_review import SYSTEM_PROMPT, build_user_prompt
 from app.repositories import ai_invocation_repo
 from app.schemas.ai import TaskReviewResult
 from app.schemas.task import ReviewChecks, ReviewResult
+from app.services import notification_service
 from app.services.orca_client import ImageInput, OrcaClient, encode_image_for_vlm
 
 logger = get_logger(__name__)
@@ -131,6 +132,8 @@ async def review_task(
         },
     )
 
+    _notify_review_result(session, task=task, decision=decision, result=result)
+
     return ReviewOutcome(
         task_status=status,
         review=ReviewResult(
@@ -145,4 +148,31 @@ async def review_task(
             missing_info=result.missing_info if decision == "needs_info" else [],
             rejection_reason=result.rejection_reason if decision == "rejected" else None,
         ),
+    )
+
+
+_DECISION_TO_NOTIFICATION: dict[str, tuple[NotificationType, str]] = {
+    "approved": (NotificationType.TASK_APPROVED, "依頼が公開されました"),
+    "needs_info": (NotificationType.TASK_NEEDS_INFO, "依頼に補足情報が必要です"),
+    "rejected": (NotificationType.TASK_REJECTED, "依頼が却下されました"),
+}
+
+
+def _notify_review_result(
+    session: Session, *, task: Task, decision: str, result: TaskReviewResult
+) -> None:
+    notification_type, title = _DECISION_TO_NOTIFICATION[decision]
+    if decision == "needs_info":
+        body = "、".join(result.missing_info) or None
+    elif decision == "rejected":
+        body = result.rejection_reason
+    else:
+        body = task.title
+    notification_service.notify(
+        session,
+        user_id=task.client_id,
+        type=notification_type,
+        title=title,
+        body=body,
+        task_id=task.id,
     )

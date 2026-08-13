@@ -35,7 +35,9 @@ def stats_for_worker(session: Session, worker_id: uuid.UUID) -> ReviewStats:
             WorkerReview.worker_id == worker_id
         )
     ).one()
-    return ReviewStats(average=round(float(average), 1) if average is not None else None, count=count)
+    return ReviewStats(
+        average=round(float(average), 1) if average is not None else None, count=count
+    )
 
 
 def list_for_worker(session: Session, worker_id: uuid.UUID) -> list[tuple[WorkerReview, str]]:

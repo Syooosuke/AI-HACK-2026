@@ -43,7 +43,9 @@ class WorkerReview(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    tags: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
     comment: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")

@@ -23,6 +23,17 @@ export type AssignmentStatus =
 
 export type ValidationStatus = "pending" | "processing" | "approved" | "rejected" | "error";
 
+export type NotificationType =
+  | "task_approved"
+  | "task_needs_info"
+  | "task_rejected"
+  | "task_accepted"
+  | "submission_approved"
+  | "submission_retake"
+  | "submission_failed"
+  | "task_completed"
+  | "task_expired";
+
 export type IssueCode =
   | "SUBJECT_MISSING"
   | "TOO_DARK"
@@ -246,6 +257,18 @@ export type SavedSearch = {
   radiusKm: number;
   sort: "distance" | "reward" | "deadline";
   lastMatchCount: number | null;
+  createdAt: string;
+};
+
+/** お知らせ（画面下部タブ）の1件。 */
+export type NotificationItem = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  taskId: string | null;
+  submissionId: string | null;
+  readAt: string | null;
   createdAt: string;
 };
 

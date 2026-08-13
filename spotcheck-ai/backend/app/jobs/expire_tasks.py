@@ -20,8 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_session_factory
 from app.core.logging import get_logger
-from app.models import AssignmentStatus, TaskStatus
+from app.models import AssignmentStatus, NotificationType, TaskStatus
 from app.repositories import assignment_repo, task_repo
+from app.services import notification_service
 
 logger = get_logger(__name__)
 
@@ -52,9 +53,25 @@ def expire_overdue_tasks(session: Session, *, now: datetime | None = None) -> Ex
         if task.approved_worker_count > 0:
             task.status = TaskStatus.COMPLETED
             summary.completed += 1
+            notification_service.notify(
+                session,
+                user_id=task.client_id,
+                type=NotificationType.TASK_COMPLETED,
+                title="依頼が完了しました",
+                body=task.title,
+                task_id=task.id,
+            )
         else:
             task.status = TaskStatus.EXPIRED
             summary.expired += 1
+            notification_service.notify(
+                session,
+                user_id=task.client_id,
+                type=NotificationType.TASK_EXPIRED,
+                title="依頼が期限切れになりました",
+                body=task.title,
+                task_id=task.id,
+            )
 
     session.flush()
     return summary

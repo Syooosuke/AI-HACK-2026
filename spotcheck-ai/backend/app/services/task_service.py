@@ -16,6 +16,7 @@ from app.core.logging import get_logger
 from app.core.storage import StorageBackend
 from app.models import (
     AssignmentStatus,
+    NotificationType,
     Task,
     TaskStatus,
     User,
@@ -36,7 +37,7 @@ from app.schemas.task import (
     TaskSummary,
     TimelineStep,
 )
-from app.services import task_card, task_review, user_service
+from app.services import notification_service, task_card, task_review, user_service
 from app.services.orca_client import OrcaClient
 from app.services.uploads import extension_for, read_and_validate_image
 
@@ -228,6 +229,14 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
     logger.info(
         "依頼を受注しました",
         extra={"task_id": str(task_id), "worker_id": str(worker.id)},
+    )
+    notification_service.notify(
+        session,
+        user_id=task.client_id,
+        type=NotificationType.TASK_ACCEPTED,
+        title="依頼が受注されました",
+        body=f"{worker.display_name}さんが「{task.title}」を受注しました。",
+        task_id=task.id,
     )
     return AssignmentDetail(
         id=assignment.id,
