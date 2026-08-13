@@ -64,6 +64,14 @@ class TaskReviewResponse(CamelModel):
     review: ReviewResult
 
 
+class TaskDescriptionGenerationRequest(CamelModel):
+    title: str = Field(min_length=1, max_length=60)
+
+
+class TaskDescriptionGenerationResponse(CamelModel):
+    description: str
+
+
 class TaskResubmitRequest(CamelModel):
     """`POST /api/tasks/{taskId}/resubmit`。description のみ必須、他は差分更新。"""
 

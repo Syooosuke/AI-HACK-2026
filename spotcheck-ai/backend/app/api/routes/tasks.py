@@ -22,6 +22,8 @@ from app.schemas.task import (
     NearbyTaskListResponse,
     TaskDeadlineExtensionRequest,
     TaskDeadlineExtensionResponse,
+    TaskDescriptionGenerationRequest,
+    TaskDescriptionGenerationResponse,
     TaskDetail,
     TaskDuplicateRequest,
     TaskListResponse,
@@ -29,11 +31,21 @@ from app.schemas.task import (
     TaskReviewResponse,
     WithdrawAssignmentResponse,
 )
-from app.services import submission_service, task_service, thumbnail_service
+from app.services import submission_service, task_description, task_service, thumbnail_service
 from app.services.orca_client import get_orca_client
 from app.services.task_service import TaskCreateInput
 
 router = APIRouter(prefix="/api", tags=["tasks"])
+
+
+@router.post("/tasks/generate-description", response_model=TaskDescriptionGenerationResponse)
+async def generate_task_description(
+    payload: TaskDescriptionGenerationRequest,
+    _user: CurrentUser,
+) -> TaskDescriptionGenerationResponse:
+    """依頼タイトルから短い詳細メッセージをAI生成する。"""
+    description = await task_description.generate(payload.title, get_orca_client())
+    return TaskDescriptionGenerationResponse(description=description)
 
 
 @router.post("/tasks", response_model=TaskReviewResponse, status_code=status.HTTP_201_CREATED)
