@@ -33,6 +33,12 @@ class TaskReviewResult(BaseModel):
     summary: str
 
 
+class TaskDescriptionGenerationResult(BaseModel):
+    """依頼タイトルから生成する短い詳細メッセージ。"""
+
+    description: str = Field(min_length=10, max_length=180)
+
+
 class ImageValidationResult(BaseModel):
     """機能B: VLMによる画像検品の出力。"""
 

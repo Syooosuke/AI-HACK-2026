@@ -92,6 +92,52 @@ def reference_image() -> bytes:
 HEADERS = auth_headers(CLIENT_ID)
 
 
+def test_generate_short_description_from_title(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generated = (
+        "駅前の工事現場を正面から撮影し、建物全体と現在の進捗状況が分かる写真を提出してください。"
+    )
+    install_orca(monkeypatch, json.dumps({"description": generated}, ensure_ascii=False))
+    calls: list[dict[str, Any]] = []
+    original = OrcaClient.complete_json
+
+    async def spy(self: OrcaClient, **kwargs: Any):
+        calls.append(kwargs)
+        return await original(self, **kwargs)
+
+    monkeypatch.setattr(OrcaClient, "complete_json", spy)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/tasks/generate-description",
+            headers=HEADERS,
+            json={"title": "駅前の再開発工事の進捗確認"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"description": generated}
+    assert calls[0]["purpose"] == "task_description_generation"
+    assert calls[0]["tier"] == "light"
+    assert calls[0]["max_tokens"] == 300
+    assert "駅前の再開発工事の進捗確認" in calls[0]["user_prompt"]
+
+
+def test_generate_description_requires_login_and_valid_title(
+    session: Session, users: dict[str, User]
+) -> None:
+    with TestClient(app) as client:
+        unauthenticated = client.post(
+            "/api/tasks/generate-description", json={"title": "工事状況の確認"}
+        )
+        empty_title = client.post(
+            "/api/tasks/generate-description", headers=HEADERS, json={"title": ""}
+        )
+
+    assert unauthenticated.status_code == 401
+    assert empty_title.status_code == 400
+
+
 def test_create_task_publishes_on_approval(
     session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
 ) -> None:

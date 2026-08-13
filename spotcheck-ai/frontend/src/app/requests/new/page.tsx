@@ -11,7 +11,7 @@ import { PresetChips } from "@/components/task/PresetChips";
 import { Button, Card, SectionTitle } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { createTask } from "@/lib/api/tasks";
+import { createTask, generateTaskDescription } from "@/lib/api/tasks";
 import { isoToLocalInput, localInputToIso, minutesFromNow } from "@/lib/datetime";
 import { env } from "@/lib/env";
 import { saveReview } from "@/lib/reviewHandoff";
@@ -39,6 +39,7 @@ export default function NewTaskPage() {
   const [reward, setReward] = useState(2000);
   const [images, setImages] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
 
   const errors = useMemo(() => {
     const found: Record<string, string> = {};
@@ -87,6 +88,31 @@ export default function NewTaskPage() {
     if (!files) return;
     const merged = [...images, ...Array.from(files)].slice(0, MAX_REFERENCE_IMAGES);
     setImages(merged);
+  };
+
+  const generateDescription = async () => {
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      toast.error("先に依頼タイトルを入力してください。");
+      return;
+    }
+    if (
+      description.trim() &&
+      !window.confirm("入力済みの詳細メッセージをAI生成した文章に置き換えますか？")
+    ) {
+      return;
+    }
+
+    setGeneratingDescription(true);
+    try {
+      const generated = await generateTaskDescription(normalizedTitle);
+      setDescription(generated.description);
+      toast.success("詳細メッセージを生成しました。内容を確認して必要に応じて編集してください。");
+    } catch (cause) {
+      toast.error(toMessage(cause));
+    } finally {
+      setGeneratingDescription(false);
+    }
   };
 
   const submit = async () => {
@@ -192,9 +218,19 @@ export default function NewTaskPage() {
         </div>
 
         <div className="space-y-2">
-          <SectionTitle>6. 詳細メッセージ</SectionTitle>
+          <div className="flex items-center justify-between gap-3">
+            <SectionTitle>6. 詳細メッセージ</SectionTitle>
+            <button
+              type="button"
+              onClick={() => void generateDescription()}
+              disabled={!title.trim() || generatingDescription || submitting}
+              className="shrink-0 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {generatingDescription ? "AIが作成中…" : "AIで詳細を作成"}
+            </button>
+          </div>
           <p className="text-xs text-slate-500">
-            タップすると、その依頼でよく使う文章に置き換わります。もう一度タップで消えます
+            タイトルから短い依頼文を生成できます。生成後も自由に編集できます
           </p>
           <PresetChips
             onPick={applyPresetToDescription}
@@ -208,6 +244,7 @@ export default function NewTaskPage() {
               maxLength={DESCRIPTION_MAX}
               placeholder="周辺の工事状況や交通状況を確認してください。"
               onChange={(e) => setDescription(e.target.value)}
+              disabled={generatingDescription}
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
             />
           </Field>

@@ -23,6 +23,13 @@ export type CreateTaskInput = {
   referenceImages: File[];
 };
 
+export function generateTaskDescription(title: string): Promise<{ description: string }> {
+  return apiFetch<{ description: string }>("/api/tasks/generate-description", {
+    method: "POST",
+    body: { title },
+  });
+}
+
 /** `POST /api/tasks`（画面①→②）。AI審査が同期実行されるため時間がかかる。 */
 export function createTask(input: CreateTaskInput): Promise<TaskReviewResponse> {
   const form = new FormData();
