@@ -210,6 +210,10 @@ class AcceptTaskResponse(CamelModel):
     assignment: AssignmentDetail
 
 
+class WithdrawAssignmentResponse(CamelModel):
+    assignment: AssignmentDetail
+
+
 class MyAssignmentItem(CamelModel):
     id: uuid.UUID
     task_id: uuid.UUID

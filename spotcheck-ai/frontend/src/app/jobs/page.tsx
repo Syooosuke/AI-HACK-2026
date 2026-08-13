@@ -9,13 +9,14 @@ import { Card, EmptyState, Skeleton } from "@/components/ui";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { listMyAssignments } from "@/lib/api/tasks";
+import { listMyAssignments, withdrawAssignment } from "@/lib/api/tasks";
 import { formatDateTime } from "@/lib/datetime";
 import type { MyAssignmentItem } from "@/types/api";
 
 export default function MyAssignmentsPage() {
   const toast = useToast();
   const [items, setItems] = useState<MyAssignmentItem[] | null>(null);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -30,6 +31,22 @@ export default function MyAssignmentsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const withdraw = async (item: MyAssignmentItem) => {
+    if (!window.confirm("この依頼の受注を辞退しますか？募集枠は他のワーカーに戻ります。")) {
+      return;
+    }
+    setWithdrawingId(item.id);
+    try {
+      await withdrawAssignment(item.taskId);
+      toast.success("受注を辞退しました。");
+      await load();
+    } catch (cause) {
+      toast.error(toMessage(cause));
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
 
   return (
     <div className="space-y-4 md:mx-auto md:max-w-2xl">
@@ -59,12 +76,24 @@ export default function MyAssignmentsPage() {
             </div>
             <div className="flex gap-2">
               {item.status === "accepted" && (
-                <Link
-                  href={`/jobs/${item.taskId}/capture`}
-                  className="flex-1 rounded-lg bg-worker py-2 text-center text-xs font-bold text-white"
-                >
-                  撮影する
-                </Link>
+                <>
+                  <Link
+                    href={`/jobs/${item.taskId}/capture`}
+                    className="flex-1 rounded-lg bg-worker py-2 text-center text-xs font-bold text-white"
+                  >
+                    撮影する
+                  </Link>
+                  {!item.latestSubmissionId && (
+                    <button
+                      type="button"
+                      onClick={() => void withdraw(item)}
+                      disabled={withdrawingId === item.id}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
+                    >
+                      {withdrawingId === item.id ? "辞退中…" : "辞退する"}
+                    </button>
+                  )}
+                </>
               )}
               {item.latestSubmissionId && (
                 <Link
