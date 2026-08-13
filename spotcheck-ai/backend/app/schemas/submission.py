@@ -11,6 +11,7 @@ from pydantic import Field
 from app.models.enums import AssignmentStatus, TaskStatus, ValidationStatus
 from app.schemas.common import CamelModel
 from app.schemas.user import WorkerSummary
+from app.schemas.worker_review import WorkerReviewResponse
 
 #: `ai_feedback.issues[].code` に使える定義済みコード（docs/02-database.md 2.5）
 IssueCode = Literal[
@@ -68,6 +69,7 @@ class SubmissionStatusResponse(CamelModel):
     issues: list[Issue] = Field(default_factory=list)
     retake: RetakeInfo
     assignment_status: AssignmentStatus
+    worker_review: WorkerReviewResponse | None = None
 
 
 class TaskResultItem(CamelModel):
@@ -81,6 +83,7 @@ class TaskResultItem(CamelModel):
     ai_summary: str | None = None
     location_check: dict | None = None
     worker: WorkerSummary
+    worker_review: WorkerReviewResponse | None = None
 
 
 class TaskResultsResponse(CamelModel):

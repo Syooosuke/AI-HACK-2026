@@ -22,6 +22,7 @@ from app.models.task import Task, TaskReferenceImage
 from app.models.task_assignment import TaskAssignment
 from app.models.task_like import TaskLike
 from app.models.user import User
+from app.models.worker_review import WorkerReview
 
 __all__ = [
     "ACTIVE_ASSIGNMENT_STATUSES",
@@ -41,4 +42,5 @@ __all__ = [
     "TaskStatus",
     "User",
     "ValidationStatus",
+    "WorkerReview",
 ]

@@ -1,7 +1,7 @@
 /** ユーザーAPI（`/api/users/*`）。アバターの差し替えと公開プロフィールの取得。 */
 
 import { apiFetch } from "@/lib/api/client";
-import type { AuthUser, PublicProfile } from "@/types/api";
+import type { AuthUser, PublicProfile, ReceivedWorkerReviews } from "@/types/api";
 
 /** アバターを差し替える。更新後のユーザー情報を返す。 */
 export function uploadAvatar(file: File): Promise<{ user: AuthUser }> {
@@ -21,4 +21,9 @@ export function deleteAvatar(): Promise<{ user: AuthUser }> {
 /** `GET /api/users/{userId}/public`。閲覧専用の公開プロフィール（docs/03-api.md 3.4.1）。 */
 export function getPublicProfile(userId: string): Promise<PublicProfile> {
   return apiFetch<PublicProfile>(`/api/users/${userId}/public`);
+}
+
+/** 自分がワーカーとして受け取った匿名評価一覧。 */
+export function getMyReceivedReviews(): Promise<ReceivedWorkerReviews> {
+  return apiFetch<ReceivedWorkerReviews>("/api/users/me/reviews");
 }
