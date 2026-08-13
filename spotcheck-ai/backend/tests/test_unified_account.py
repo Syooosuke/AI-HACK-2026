@@ -5,12 +5,14 @@ role を廃止したため、権限は「依頼のオーナーか受注者か」
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.storage import get_storage
 from app.main import app
-from app.models import Task, User
+from app.models import Task, TaskStatus, User
 from app.services import task_service
 from tests.conftest import auth_headers, make_task
 
@@ -120,6 +122,79 @@ def test_cancel_is_limited_to_owner(session: Session, users: dict[str, User]) ->
     assert by_other.status_code == 403
     assert by_owner.status_code == 200
     assert by_owner.json()["task"]["status"] == "cancelled"
+
+
+def test_owner_can_extend_deadline(session: Session, users: dict[str, User]) -> None:
+    task = make_task(session, client=users["client"])
+    original_deadline = task.deadline_at
+    new_deadline = original_deadline + timedelta(days=1)
+
+    with TestClient(app) as api:
+        response = api.post(
+            f"/api/tasks/{task.id}/extend-deadline",
+            headers=auth_headers(users["client"]),
+            json={"deadlineAt": new_deadline.isoformat()},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["task"]["deadlineAt"] == new_deadline.isoformat().replace("+00:00", "Z")
+    session.refresh(task)
+    assert task.deadline_at == new_deadline
+
+
+def test_deadline_extension_is_limited_to_owner(session: Session, users: dict[str, User]) -> None:
+    task = make_task(session, client=users["client"])
+
+    with TestClient(app) as api:
+        response = api.post(
+            f"/api/tasks/{task.id}/extend-deadline",
+            headers=auth_headers(users["worker"]),
+            json={"deadlineAt": (task.deadline_at + timedelta(days=1)).isoformat()},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_deadline_cannot_be_shortened_or_changed_after_completion(
+    session: Session, users: dict[str, User]
+) -> None:
+    task = make_task(session, client=users["client"])
+
+    with TestClient(app) as api:
+        shortened = api.post(
+            f"/api/tasks/{task.id}/extend-deadline",
+            headers=auth_headers(users["client"]),
+            json={"deadlineAt": (task.deadline_at - timedelta(minutes=1)).isoformat()},
+        )
+        task.status = TaskStatus.COMPLETED
+        session.commit()
+        completed = api.post(
+            f"/api/tasks/{task.id}/extend-deadline",
+            headers=auth_headers(users["client"]),
+            json={"deadlineAt": (task.deadline_at + timedelta(days=1)).isoformat()},
+        )
+
+    assert shortened.status_code == 400
+    assert shortened.json()["error"]["details"]["field"] == "deadlineAt"
+    assert completed.status_code == 409
+    assert completed.json()["error"]["code"] == "INVALID_STATE"
+
+
+def test_overdue_deadline_cannot_be_extended(session: Session, users: dict[str, User]) -> None:
+    task = make_task(session, client=users["client"])
+    task.deadline_at = datetime.now(UTC) - timedelta(minutes=1)
+    session.commit()
+
+    with TestClient(app) as api:
+        response = api.post(
+            f"/api/tasks/{task.id}/extend-deadline",
+            headers=auth_headers(users["client"]),
+            json={"deadlineAt": (datetime.now(UTC) + timedelta(days=1)).isoformat()},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "INVALID_STATE"
 
 
 def test_results_are_limited_to_owner(session: Session, users: dict[str, User]) -> None:

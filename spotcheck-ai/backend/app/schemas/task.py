@@ -80,6 +80,16 @@ class TaskDuplicateRequest(CamelModel):
     deadline_at: datetime
 
 
+class TaskDeadlineExtensionRequest(CamelModel):
+    """依頼者による提出期限の延長。"""
+
+    deadline_at: datetime
+
+
+class TaskDeadlineExtensionResponse(CamelModel):
+    task: TaskSummary
+
+
 class TaskListItem(CamelModel):
     id: uuid.UUID
     title: str

@@ -12,8 +12,8 @@ import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { getTask } from "@/lib/api/tasks";
-import { formatDateTime, formatRemaining } from "@/lib/datetime";
+import { extendTaskDeadline, getTask } from "@/lib/api/tasks";
+import { formatDateTime, formatRemaining, isoToLocalInput, localInputToIso } from "@/lib/datetime";
 import { formatCoords } from "@/lib/geo";
 import type { TaskDetail } from "@/types/api";
 
@@ -24,6 +24,9 @@ export default function TaskProgressPage() {
   const toast = useToast();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [failed, setFailed] = useState(false);
+  const [showDeadlineForm, setShowDeadlineForm] = useState(false);
+  const [newDeadlineAt, setNewDeadlineAt] = useState("");
+  const [extending, setExtending] = useState(false);
 
   const load = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -55,6 +58,32 @@ export default function TaskProgressPage() {
   }
 
   const hasResults = task.approvedWorkerCount > 0 || task.status === "completed";
+  const canExtendDeadline = task.status === "open" || task.status === "in_progress";
+
+  const openDeadlineForm = () => {
+    const defaultDeadline = new Date(new Date(task.deadlineAt).getTime() + 24 * 60 * 60 * 1000);
+    setNewDeadlineAt(isoToLocalInput(defaultDeadline));
+    setShowDeadlineForm(true);
+  };
+
+  const extendDeadline = async () => {
+    if (!newDeadlineAt) return;
+    if (new Date(newDeadlineAt) <= new Date(task.deadlineAt)) {
+      toast.error("現在の提出期限より後を指定してください。");
+      return;
+    }
+    setExtending(true);
+    try {
+      const { task: updated } = await extendTaskDeadline(task.id, localInputToIso(newDeadlineAt));
+      setTask({ ...task, deadlineAt: updated.deadlineAt });
+      setShowDeadlineForm(false);
+      toast.success("提出期限を延長しました。");
+    } catch (cause) {
+      toast.error(toMessage(cause));
+    } finally {
+      setExtending(false);
+    }
+  };
 
   return (
     <div className="space-y-5 md:mx-auto md:max-w-2xl">
@@ -86,6 +115,52 @@ export default function TaskProgressPage() {
             value={`${task.approvedWorkerCount} / ${task.requiredWorkerCount}人`}
             icon={<span>✅</span>}
           />
+        )}
+        {canExtendDeadline && (
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            {showDeadlineForm ? (
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-500">
+                  新しい提出期限
+                  <input
+                    type="datetime-local"
+                    value={newDeadlineAt}
+                    min={isoToLocalInput(new Date(task.deadlineAt))}
+                    onChange={(event) => setNewDeadlineAt(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-normal text-slate-800"
+                  />
+                </label>
+                <p className="text-xs text-slate-500">現在の期限より後の日時を指定してください。</p>
+                <div className="flex gap-2">
+                  <Button
+                    accent="neutral"
+                    className="py-2.5"
+                    onClick={() => setShowDeadlineForm(false)}
+                    disabled={extending}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    accent="client"
+                    className="py-2.5"
+                    onClick={() => void extendDeadline()}
+                    loading={extending}
+                    disabled={!newDeadlineAt}
+                  >
+                    期限を延長する
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openDeadlineForm}
+                className="text-xs font-bold text-client hover:underline"
+              >
+                提出期限を延長する
+              </button>
+            )}
+          </div>
         )}
       </Card>
 
