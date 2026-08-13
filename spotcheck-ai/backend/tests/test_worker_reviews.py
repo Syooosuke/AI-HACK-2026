@@ -31,9 +31,7 @@ def make_submission(
     return submission
 
 
-def test_requester_can_review_approved_submission(
-    session: Session, users: dict[str, User]
-) -> None:
+def test_requester_can_review_approved_submission(session: Session, users: dict[str, User]) -> None:
     submission = make_submission(session, users)
     with TestClient(app) as client:
         response = client.post(
@@ -90,9 +88,7 @@ def test_pending_submission_cannot_be_reviewed(session: Session, users: dict[str
     assert response.status_code == 409
 
 
-def test_review_stats_are_shown_on_public_profile(
-    session: Session, users: dict[str, User]
-) -> None:
+def test_review_stats_are_shown_on_public_profile(session: Session, users: dict[str, User]) -> None:
     first = make_submission(session, users)
     second_task = make_task(session, client=users["client"], status="completed")
     second_assignment = make_assignment(session, task=second_task, worker=users["worker"])
@@ -158,9 +154,7 @@ def test_worker_can_list_received_reviews_without_reviewer_identity(
     assert users["client"].display_name not in serialized
 
 
-def test_worker_sees_review_in_submission_status(
-    session: Session, users: dict[str, User]
-) -> None:
+def test_worker_sees_review_in_submission_status(session: Session, users: dict[str, User]) -> None:
     submission = make_submission(session, users)
     with TestClient(app) as client:
         client.post(

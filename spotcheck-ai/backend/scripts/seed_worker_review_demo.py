@@ -122,8 +122,15 @@ async def main() -> int:
             "received_at": now - timedelta(hours=1),
             "ai_validation_status": ValidationStatus.APPROVED,
             "ai_score": 92,
-            "ai_feedback": {"summary": "施設正面の外観と周辺の歩行状況が確認できます。", "issues": []},
-            "location_check": {"within_tolerance": True, "timestamp_consistent": True, "distance_m": 3.2},
+            "ai_feedback": {
+                "summary": "施設正面の外観と周辺の歩行状況が確認できます。",
+                "issues": [],
+            },
+            "location_check": {
+                "within_tolerance": True,
+                "timestamp_consistent": True,
+                "distance_m": 3.2,
+            },
             "masking_result": {"regions": [], "skipped": False},
             "reality_score": 96,
         }
