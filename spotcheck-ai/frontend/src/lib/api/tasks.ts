@@ -39,6 +39,16 @@ export function createTask(input: CreateTaskInput): Promise<TaskReviewResponse> 
   return apiFetch<TaskReviewResponse>("/api/tasks", { method: "POST", body: form });
 }
 
+export function duplicateTask(
+  taskId: string,
+  payload: { scheduledAt: string; deadlineAt: string },
+): Promise<TaskReviewResponse> {
+  return apiFetch<TaskReviewResponse>(`/api/tasks/${taskId}/duplicate`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export function resubmitTask(
   taskId: string,
   payload: { description: string; scheduledAt?: string; rewardAmount?: number },

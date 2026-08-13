@@ -73,6 +73,13 @@ class TaskResubmitRequest(CamelModel):
     reward_amount: int | None = Field(default=None, ge=100, le=100000)
 
 
+class TaskDuplicateRequest(CamelModel):
+    """過去の依頼を日時だけ変更して再投稿する。"""
+
+    scheduled_at: datetime
+    deadline_at: datetime
+
+
 class TaskListItem(CamelModel):
     id: uuid.UUID
     title: str

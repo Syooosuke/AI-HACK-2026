@@ -3,6 +3,7 @@
 /** 画面① 依頼作成（docs/05-frontend.md 画面①）。 */
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { LocationPicker, type PickedLocation } from "@/components/map/LocationPicker";
@@ -114,6 +115,15 @@ export default function NewTaskPage() {
   return (
     <div className="space-y-5 md:mx-auto md:max-w-2xl">
       <h1 className="text-lg font-bold text-slate-800">依頼を作成</h1>
+
+      <div className="-mt-3">
+        <Link
+          href="/requests"
+          className="inline-flex items-center rounded-lg border border-client px-3 py-2 text-xs font-bold text-client transition hover:bg-blue-50"
+        >
+          過去の依頼を複製
+        </Link>
+      </div>
 
       <Card className="space-y-3">
         <SectionTitle>1. 撮影地点を指定</SectionTitle>
