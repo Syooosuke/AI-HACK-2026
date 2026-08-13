@@ -25,6 +25,7 @@ from app.schemas.task import (
     TaskListResponse,
     TaskResubmitRequest,
     TaskReviewResponse,
+    WithdrawAssignmentResponse,
 )
 from app.services import submission_service, task_service, thumbnail_service
 from app.services.orca_client import get_orca_client
@@ -187,6 +188,16 @@ def accept_task(session: DbSession, worker: CurrentUser, task_id: uuid.UUID) -> 
     """受注（画面⑤）。枠の超過は 409 TASK_FULL。"""
     return AcceptTaskResponse(
         assignment=task_service.accept_task(session, worker=worker, task_id=task_id)
+    )
+
+
+@router.post("/tasks/{task_id}/withdraw", response_model=WithdrawAssignmentResponse)
+def withdraw_assignment(
+    session: DbSession, worker: CurrentUser, task_id: uuid.UUID
+) -> WithdrawAssignmentResponse:
+    """撮影提出前の受注を辞退し、募集枠を戻す。"""
+    return WithdrawAssignmentResponse(
+        assignment=task_service.withdraw_assignment(session, worker=worker, task_id=task_id)
     )
 
 

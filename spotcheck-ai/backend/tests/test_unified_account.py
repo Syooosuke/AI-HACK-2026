@@ -28,6 +28,24 @@ def test_any_user_can_create_and_accept(session: Session, users: dict[str, User]
     assert response.json()["assignment"]["taskId"] == str(task.id)
 
 
+def test_worker_can_withdraw_own_assignment_via_api(
+    session: Session, users: dict[str, User]
+) -> None:
+    task = make_task(session, client=users["client"])
+
+    with TestClient(app) as api:
+        api.post(f"/api/tasks/{task.id}/accept", headers=auth_headers(users["worker"]))
+        by_other = api.post(
+            f"/api/tasks/{task.id}/withdraw", headers=auth_headers(users["worker2"])
+        )
+        response = api.post(f"/api/tasks/{task.id}/withdraw", headers=auth_headers(users["worker"]))
+
+    assert by_other.status_code == 404
+    assert by_other.json()["error"]["code"] == "ASSIGNMENT_NOT_FOUND"
+    assert response.status_code == 200
+    assert response.json()["assignment"]["status"] == "cancelled"
+
+
 def test_owner_cannot_accept_own_task(session: Session, users: dict[str, User]) -> None:
     task = make_task(session, client=users["client"])
 

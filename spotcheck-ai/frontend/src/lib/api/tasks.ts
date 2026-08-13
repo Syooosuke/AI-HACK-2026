@@ -94,6 +94,12 @@ export function acceptTask(taskId: string): Promise<{ assignment: AssignmentDeta
   });
 }
 
+export function withdrawAssignment(taskId: string): Promise<{ assignment: AssignmentDetail }> {
+  return apiFetch<{ assignment: AssignmentDetail }>(`/api/tasks/${taskId}/withdraw`, {
+    method: "POST",
+  });
+}
+
 export function cancelTask(taskId: string): Promise<{ task: TaskSummary }> {
   return apiFetch<{ task: TaskSummary }>(`/api/tasks/${taskId}/cancel`, { method: "POST" });
 }

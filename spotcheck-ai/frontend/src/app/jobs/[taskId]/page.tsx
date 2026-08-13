@@ -19,7 +19,7 @@ import { TrustBar } from "@/components/ui/TrustGauge";
 import { ApiError, resolveApiUrl } from "@/lib/api/client";
 import { likeTask, unlikeTask } from "@/lib/api/social";
 import { toMessage } from "@/lib/api/errorMessages";
-import { acceptTask, getTask } from "@/lib/api/tasks";
+import { acceptTask, getTask, withdrawAssignment } from "@/lib/api/tasks";
 import { formatDateTime, formatRemaining } from "@/lib/datetime";
 import { formatCoords, formatDistanceWithWalk } from "@/lib/geo";
 import type { TaskDetail } from "@/types/api";
@@ -30,6 +30,7 @@ export default function WorkerTaskDetailPage() {
   const toast = useToast();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [accepting, setAccepting] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [likePending, setLikePending] = useState(false);
 
   const load = useCallback(async () => {
@@ -77,6 +78,22 @@ export default function WorkerTaskDetailPage() {
     }
   };
 
+  const withdraw = async () => {
+    if (!window.confirm("この依頼の受注を辞退しますか？募集枠は他のワーカーに戻ります。")) {
+      return;
+    }
+    setWithdrawing(true);
+    try {
+      await withdrawAssignment(taskId);
+      toast.success("受注を辞退しました。");
+      router.push("/jobs");
+    } catch (cause) {
+      toast.error(toMessage(cause));
+      setWithdrawing(false);
+      void load();
+    }
+  };
+
   if (!task) {
     return (
       <div className="space-y-3">
@@ -89,6 +106,7 @@ export default function WorkerTaskDetailPage() {
 
   const mine = task.myAssignment;
   const canCapture = mine?.status === "accepted";
+  const canWithdraw = canCapture && !mine.latestSubmissionId;
   const isFull = task.remainingSlots <= 0 && !mine;
 
   return (
@@ -257,12 +275,24 @@ export default function WorkerTaskDetailPage() {
         </p>
 
         {canCapture ? (
-          <Button
-            accent="worker"
-            onClick={() => router.push(`/jobs/${taskId}/capture`)}
-          >
-            撮影に進む
-          </Button>
+          <div className="space-y-2">
+            <Button
+              accent="worker"
+              onClick={() => router.push(`/jobs/${taskId}/capture`)}
+              disabled={withdrawing}
+            >
+              撮影に進む
+            </Button>
+            {canWithdraw && (
+              <Button
+                accent="neutral"
+                onClick={() => void withdraw()}
+                loading={withdrawing}
+              >
+                受注を辞退する
+              </Button>
+            )}
+          </div>
         ) : mine ? (
           <Button
             accent="neutral"

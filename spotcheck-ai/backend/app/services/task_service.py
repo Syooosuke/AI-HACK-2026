@@ -235,6 +235,47 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
     )
 
 
+def withdraw_assignment(session: Session, *, worker: User, task_id: uuid.UUID) -> AssignmentDetail:
+    """未提出の受注を辞退し、占有していた募集枠を再開放する。"""
+    task = task_repo.get_for_update(session, task_id)
+    if task is None:
+        raise NotFound("指定された依頼が見つかりません。", code="TASK_NOT_FOUND")
+
+    assignment = assignment_repo.get_by_task_and_worker(
+        session, task_id=task_id, worker_id=worker.id
+    )
+    if assignment is None:
+        raise NotFound("この依頼の受注情報が見つかりません。", code="ASSIGNMENT_NOT_FOUND")
+    if assignment.status is not AssignmentStatus.ACCEPTED:
+        raise Conflict(
+            "撮影を提出する前の依頼のみ辞退できます。",
+            code="INVALID_STATE",
+        )
+    if submission_repo.latest_by_assignment(session, assignment.id) is not None:
+        raise Conflict(
+            "撮影を一度でも提出した依頼は辞退できません。",
+            code="INVALID_STATE",
+        )
+
+    assignment.status = AssignmentStatus.CANCELLED
+    assignment.completed_at = datetime.now(UTC)
+    session.flush()
+    reopen_if_slot_available(session, task)
+    session.flush()
+
+    logger.info(
+        "ワーカーが受注を辞退しました",
+        extra={"task_id": str(task_id), "worker_id": str(worker.id)},
+    )
+    return AssignmentDetail(
+        id=assignment.id,
+        task_id=task_id,
+        status=assignment.status,
+        retake_count=assignment.retake_count,
+        remaining_retakes=get_settings().max_retake_count - assignment.retake_count,
+    )
+
+
 def cancel_task(session: Session, *, client: User, task_id: uuid.UUID) -> TaskSummary:
     """依頼取消（docs/03-api.md 3.9）。受注済みの場合は取消できない。"""
     task = _get_owned_task(session, task_id, client)
