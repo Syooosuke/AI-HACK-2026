@@ -22,7 +22,14 @@ import { toMessage } from "@/lib/api/errorMessages";
 import { getSubmission } from "@/lib/api/submissions";
 import { getTask } from "@/lib/api/tasks";
 import { formatElapsed, nextPollInterval, shouldStopPolling } from "@/lib/polling";
-import type { SubmissionStatus } from "@/types/api";
+import type { SubmissionStatus, WorkerReviewTag } from "@/types/api";
+
+const REVIEW_TAG_LABELS: Record<WorkerReviewTag, string> = {
+  as_requested: "依頼どおり",
+  clear_photo: "写真が見やすい",
+  fast_response: "対応が早い",
+  accurate_location: "位置情報が正確",
+};
 
 export default function SubmissionStatusPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -194,6 +201,48 @@ export default function SubmissionStatusPage() {
           <Button accent="worker" onClick={() => router.push("/home")}>
             依頼一覧へ戻る
           </Button>
+        </Card>
+      )}
+
+      {approved && (
+        <Card>
+          <SectionTitle>依頼者からの評価</SectionTitle>
+          {data.workerReview ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-bold text-slate-700">今回の評価</span>
+                <span
+                  className="text-xl tracking-wide text-amber-400"
+                  aria-label={`${data.workerReview.rating}つ星`}
+                >
+                  {"★".repeat(data.workerReview.rating)}
+                  <span className="text-slate-200">
+                    {"★".repeat(5 - data.workerReview.rating)}
+                  </span>
+                </span>
+              </div>
+              {data.workerReview.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {data.workerReview.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-800"
+                    >
+                      {REVIEW_TAG_LABELS[tag]}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {data.workerReview.comment && (
+                <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+                  {data.workerReview.comment}
+                </p>
+              )}
+              <p className="text-xs text-slate-400">依頼者からの匿名評価です。</p>
+            </div>
+          ) : (
+            <p className="py-2 text-sm text-slate-500">まだ依頼者から評価されていません。</p>
+          )}
         </Card>
       )}
 

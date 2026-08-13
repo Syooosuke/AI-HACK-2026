@@ -145,6 +145,8 @@ export type WorkerStats = {
   /** 0〜100。画面ではゲージで表示する。 */
   trustScore: number;
   approvedSubmissionCount: number;
+  averageRating: number | null;
+  reviewCount: number;
 };
 
 /** 閲覧専用の公開プロフィール。email / loginId は含まれない。 */
@@ -290,6 +292,7 @@ export type SubmissionStatus = {
   issues: Issue[];
   retake: { allowed: boolean; remaining: number };
   assignmentStatus: AssignmentStatus;
+  workerReview: WorkerReview | null;
 };
 
 export type LocationCheck = {
@@ -314,7 +317,41 @@ export type TaskResultItem = {
   aiSummary: string | null;
   locationCheck: LocationCheck | null;
   /** `trustScore` は 0〜100。画面ではゲージで表示する。 */
-  worker: { displayName: string; trustScore: number; avatarUrl: string | null };
+  worker: { id: string; displayName: string; trustScore: number; avatarUrl: string | null };
+  workerReview: WorkerReview | null;
+};
+
+export type WorkerReviewTag =
+  | "as_requested"
+  | "clear_photo"
+  | "fast_response"
+  | "accurate_location";
+
+export type WorkerReview = {
+  id: string;
+  submissionId: string;
+  workerId: string;
+  rating: number;
+  tags: WorkerReviewTag[];
+  comment: string | null;
+  createdAt: string;
+};
+
+export type ReceivedWorkerReview = {
+  id: string;
+  submissionId: string;
+  taskId: string;
+  taskTitle: string;
+  rating: number;
+  tags: WorkerReviewTag[];
+  comment: string | null;
+  createdAt: string;
+};
+
+export type ReceivedWorkerReviews = {
+  reviews: ReceivedWorkerReview[];
+  averageRating: number | null;
+  reviewCount: number;
 };
 
 export type TaskResults = {
