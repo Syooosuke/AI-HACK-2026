@@ -73,8 +73,8 @@ flowchart TB
 | ⑤ | 写真が無い依頼のサムネイルを作るため、サーバーから Street View Static を叩く |
 | ⑥ | ブラウザ側の地図表示・地名検索・ストリートビュー。キーが無い場合は緯度経度の手入力へフォールバック |
 
-> 顔・ナンバープレートの検出は**クラウドのVision APIを使わず**、バックエンドのコンテナ内で
-> YOLO を推論する（画像を外部へ出さないため）。
+> 顔・人物・車両はバックエンドのコンテナ内でYOLOを推論し、OrcaRouter Visionが
+> 顔の見逃しとナンバープレート・表札・番地・個人書類を補完します。
 
 ### 依頼から納品までの流れ
 
@@ -267,7 +267,7 @@ flowchart TB
     sc["4. reality_score を算出"]
     jd{"5. 合否判定"}
 
-    ok["6. マスキング（YOLO）<br/>顔・ナンバープレート"]
+    ok["6. マスキング（YOLO＋OrcaRouter）<br/>顔・ナンバー・表札・番地・個人書類"]
     st["加工済みを配信用バケットへ<br/>原本は非公開のまま残す"]
     pay["決済スタブを記録<br/>charge / payout"]
     sum["合格画像から調査結果を要約"]
@@ -284,6 +284,80 @@ flowchart TB
 ```
 
 **検品と報酬はワーカー単位**です。合格した人から順に納品・報酬確定し、全員の完了を待ちません。
+
+### 画像検品・マスキング処理のシーケンス
+
+人物や顔の写り込み自体は検品の不合格理由にしません。OrcaRouterが人物の回避だけを理由に
+不合格を返した場合はバックエンドで補正し、通常の合格処理とマスキングへ進めます。
+対象物が写っていない、暗くて判別できない、強くぶれている、位置・時刻が一致しない場合は
+従来どおり再撮影になります。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor worker as ワーカー
+    participant front as Next.js
+    participant api as FastAPI
+    participant raw as 原本ストレージ
+    participant orca as OrcaRouter Vision
+    participant yolo as YOLO（コンテナ内）
+    participant pillow as Pillow
+    participant processed as 加工済みストレージ
+    actor client as 依頼者
+
+    worker->>front: 写真を撮影して提出
+    front->>api: 画像＋現在地＋撮影日時
+    api->>raw: 原画像を非公開で保存
+    api-->>front: 202 Accepted＋ポーリングURL
+
+    rect rgb(245, 248, 255)
+        Note over api,orca: バックグラウンド検品
+        api->>api: 距離・日時・EXIFを検証
+        api->>raw: 原画像を取得
+        raw-->>api: 原画像
+        api->>orca: 原画像＋依頼条件＋参考画像
+        orca-->>api: 対象・構図・画質・スコア・issues
+
+        alt 人物・顔の回避だけを理由に拒否
+            api->>api: issueを除外<br/>framingとスコアを補正
+        end
+
+        api->>api: 位置・時刻・画像検品から合否判定
+    end
+
+    alt 不合格
+        api-->>front: 再撮影理由
+        front-->>worker: 再撮影を案内
+    else 合格
+        api->>raw: 原画像を再取得
+        raw-->>api: 原画像
+
+        par ローカル物体検出
+            api->>yolo: 顔モデルで顔を検出
+            yolo-->>api: 顔の座標
+        and 一般モデルは1回だけ推論
+            api->>yolo: 人物・車両を検出
+            yolo-->>api: 人物・車両の座標
+        end
+
+        api->>orca: 原画像＋車両座標
+        orca-->>api: 顔・ナンバー・表札・番地・個人書類の座標
+        api->>pillow: 全検出座標と原画像
+        pillow-->>api: 顔等をぼかし<br/>ナンバーを黒塗り
+        api->>processed: 加工済み画像だけを保存
+        api->>api: 合格・報酬・信頼度を更新
+        api-->>front: 加工済み画像URL＋検品結果
+        front-->>worker: 合格・報酬確定を表示
+        processed-->>client: 署名付きURLで加工済み画像を表示
+    end
+```
+
+| マスキング対象 | 検出 | 加工 |
+|---|---|---|
+| 顔 | YOLO顔モデル＋OrcaRouter補完 | ぼかし |
+| ナンバープレート | OrcaRouter Vision | 黒塗り |
+| 表札・番地・部屋番号 | OrcaRouter Vision | ぼかし |
+| 個人情報が写った書類・伝票 | OrcaRouter Vision | ぼかし |
 
 ### フロントエンドの画面構成
 
