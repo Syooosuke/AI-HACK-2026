@@ -16,6 +16,7 @@ import { toMessage } from "@/lib/api/errorMessages";
 import { saveSearch } from "@/lib/api/social";
 import { listNearbyTasks } from "@/lib/api/tasks";
 import { env } from "@/lib/env";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { NearbyTask } from "@/types/api";
 
 type SortKey = "distance" | "reward" | "deadline";
@@ -23,14 +24,26 @@ type SortKey = "distance" | "reward" | "deadline";
 /** 検索範囲の選択肢（km）。バックエンドの許容範囲は 0.5〜50km。 */
 const RADIUS_OPTIONS = [1, 3, 5, 10, 30];
 
+type HomeCache = {
+  sort: SortKey;
+  radiusKm: number;
+  center: typeof env.defaultMapCenter;
+  address: string | null;
+  geoDenied: boolean;
+  tasks: NearbyTask[];
+};
+
+const HOME_CACHE_KEY = "home";
+
 export default function HomePage() {
   const toast = useToast();
-  const [sort, setSort] = useState<SortKey>("distance");
-  const [radiusKm, setRadiusKm] = useState(5);
-  const [center, setCenter] = useState(env.defaultMapCenter);
-  const [address, setAddress] = useState<string | null>(null);
-  const [geoDenied, setGeoDenied] = useState(false);
-  const [tasks, setTasks] = useState<NearbyTask[] | null>(null);
+  const cached = getPageCache<HomeCache>(HOME_CACHE_KEY);
+  const [sort, setSort] = useState<SortKey>(() => cached?.sort ?? "distance");
+  const [radiusKm, setRadiusKm] = useState(() => cached?.radiusKm ?? 5);
+  const [center, setCenter] = useState(() => cached?.center ?? env.defaultMapCenter);
+  const [address, setAddress] = useState<string | null>(() => cached?.address ?? null);
+  const [geoDenied, setGeoDenied] = useState(() => cached?.geoDenied ?? false);
+  const [tasks, setTasks] = useState<NearbyTask[] | null>(() => cached?.tasks ?? null);
   const [saving, setSaving] = useState(false);
 
   // 起動時に現在地を取得する。拒否された場合は既定座標にフォールバックする。
@@ -59,6 +72,19 @@ export default function HomePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tasks) {
+      setPageCache<HomeCache>(HOME_CACHE_KEY, {
+        sort,
+        radiusKm,
+        center,
+        address,
+        geoDenied,
+        tasks,
+      });
+    }
+  }, [address, center, geoDenied, radiusKm, sort, tasks]);
 
   const search = (place: SearchedPlace) => {
     setCenter({ lat: place.lat, lng: place.lng });

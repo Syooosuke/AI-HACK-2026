@@ -15,6 +15,7 @@ import { EmptyState, SectionTitle, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { deleteSavedSearch, listLikedTasks, listSavedSearches } from "@/lib/api/social";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { NearbyTask, SavedSearch } from "@/types/api";
 
 const SORT_LABEL: Record<SavedSearch["sort"], string> = {
@@ -23,10 +24,14 @@ const SORT_LABEL: Record<SavedSearch["sort"], string> = {
   deadline: "期限順",
 };
 
+type LikesCache = { tasks: NearbyTask[]; searches: SavedSearch[] };
+const LIKES_CACHE_KEY = "likes";
+
 export default function LikesPage() {
   const toast = useToast();
-  const [tasks, setTasks] = useState<NearbyTask[] | null>(null);
-  const [searches, setSearches] = useState<SavedSearch[] | null>(null);
+  const cached = getPageCache<LikesCache>(LIKES_CACHE_KEY);
+  const [tasks, setTasks] = useState<NearbyTask[] | null>(() => cached?.tasks ?? null);
+  const [searches, setSearches] = useState<SavedSearch[] | null>(() => cached?.searches ?? null);
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +48,10 @@ export default function LikesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tasks && searches) setPageCache<LikesCache>(LIKES_CACHE_KEY, { tasks, searches });
+  }, [searches, tasks]);
 
   /** いいねを外した投稿はこの一覧から消す。 */
   const handleLikeChange = (taskId: string, liked: boolean) => {

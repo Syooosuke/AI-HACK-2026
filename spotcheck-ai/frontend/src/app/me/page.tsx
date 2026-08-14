@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { deleteAvatar, getMyReceivedReviews, uploadAvatar } from "@/lib/api/users";
 import { clearSession, getCurrentUser, saveUser, subscribeSession } from "@/lib/session";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { AuthUser, ReceivedWorkerReviews } from "@/types/api";
 
 const LINKS = [
@@ -24,21 +25,33 @@ const LINKS = [
 /** バックエンドの ALLOWED_IMAGE_TYPES と揃える。 */
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
 
+type MyPageCache = { user: AuthUser | null; reviews: ReceivedWorkerReviews | null };
+const MY_PAGE_CACHE_KEY = "me";
+
 export default function MyPage() {
   const router = useRouter();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const cached = getPageCache<MyPageCache>(MY_PAGE_CACHE_KEY);
+  const [user, setUser] = useState<AuthUser | null | undefined>(() => cached?.user);
   const [saving, setSaving] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   // undefined=読み込み中 / null=取得失敗
-  const [reviews, setReviews] = useState<ReceivedWorkerReviews | null | undefined>(undefined);
+  const [reviews, setReviews] = useState<ReceivedWorkerReviews | null | undefined>(
+    () => cached?.reviews,
+  );
 
   useEffect(() => {
     const sync = () => setUser(getCurrentUser());
     sync();
     return subscribeSession(sync);
   }, []);
+
+  useEffect(() => {
+    if (user !== undefined && reviews !== undefined) {
+      setPageCache<MyPageCache>(MY_PAGE_CACHE_KEY, { user, reviews });
+    }
+  }, [reviews, user]);
 
   useEffect(() => {
     if (!isReviewModalOpen) return;
