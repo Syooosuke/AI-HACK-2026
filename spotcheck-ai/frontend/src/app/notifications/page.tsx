@@ -18,6 +18,7 @@ import { formatRelative } from "@/lib/datetime";
 import type { NotificationItem, NotificationType } from "@/types/api";
 
 const POLL_INTERVAL_MS = 10_000;
+const NOTIFICATIONS_PER_PAGE = 10;
 
 /** 取得がこれより長引いたときだけ、読み込み中の表示を出す。 */
 const SLOW_FETCH_MS = 800;
@@ -55,6 +56,7 @@ export default function NotificationsPage() {
   const toast = useToast();
   const [notifications, setNotifications] = useState<NotificationItem[] | null>(null);
   const [loadingSlow, setLoadingSlow] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const load = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -80,6 +82,25 @@ export default function NotificationsPage() {
   }, [load]);
 
   const unreadCount = notifications?.filter((item) => !item.readAt).length ?? 0;
+  const totalPages = Math.max(
+    1,
+    Math.ceil((notifications?.length ?? 0) / NOTIFICATIONS_PER_PAGE),
+  );
+  const pageNotifications =
+    notifications?.slice(
+      (currentPage - 1) * NOTIFICATIONS_PER_PAGE,
+      currentPage * NOTIFICATIONS_PER_PAGE,
+    ) ?? [];
+
+  // 自動更新などで件数が減ったとき、存在しないページを表示し続けない。
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  const moveToPage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const openNotification = (notification: NotificationItem) => {
     if (!notification.readAt) {
@@ -138,7 +159,7 @@ export default function NotificationsPage() {
         <EmptyState message="お知らせはまだありません。検品結果は「マイページ」から確認できます。" />
       ) : (
         <ul className="space-y-2">
-          {notifications.map((notification) => (
+          {pageNotifications.map((notification) => (
             <li key={notification.id}>
               <button
                 type="button"
@@ -170,6 +191,42 @@ export default function NotificationsPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {notifications.length > NOTIFICATIONS_PER_PAGE && (
+        <nav aria-label="お知らせのページ" className="flex items-center justify-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => moveToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            前へ
+          </button>
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+            <button
+              key={page}
+              type="button"
+              onClick={() => moveToPage(page)}
+              aria-current={currentPage === page ? "page" : undefined}
+              className={`h-9 min-w-9 rounded-lg px-2 text-xs font-bold transition ${
+                currentPage === page
+                  ? "bg-client text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => moveToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            次へ
+          </button>
+        </nav>
       )}
 
       {/*

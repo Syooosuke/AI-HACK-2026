@@ -110,7 +110,9 @@ export default function WorkerTaskDetailPage() {
   const mine = task.myAssignment;
   const canCapture = mine?.status === "accepted";
   const canWithdraw = canCapture && !mine.latestSubmissionId;
-  const isFull = task.remainingSlots <= 0 && !mine;
+  // 辞退済みの受注情報は履歴として残るが、空き枠があれば同じユーザーが受け直せる。
+  const canAccept = !mine || mine.status === "cancelled";
+  const isFull = task.remainingSlots <= 0;
 
   return (
     /* PCでは画像を左に固定し、右側で内容を読ませる */
@@ -133,7 +135,7 @@ export default function WorkerTaskDetailPage() {
             {task.title}
           </h1>
           <div className="flex shrink-0 items-center gap-2">
-            {mine && <AssignmentBadge status={mine.status} />}
+            {mine && mine.status !== "cancelled" && <AssignmentBadge status={mine.status} />}
             {!task.isMine && (
               <button
                 type="button"
@@ -303,6 +305,15 @@ export default function WorkerTaskDetailPage() {
               </Button>
             )}
           </div>
+        ) : canAccept ? (
+          <Button
+            accent="worker"
+            onClick={() => void accept()}
+            loading={accepting}
+            disabled={isFull}
+          >
+            {isFull ? "受注枠が埋まっています" : "この依頼を受ける"}
+          </Button>
         ) : mine ? (
           <Button
             accent="neutral"
@@ -317,16 +328,7 @@ export default function WorkerTaskDetailPage() {
           >
             検品結果を見る
           </Button>
-        ) : (
-          <Button
-            accent="worker"
-            onClick={() => void accept()}
-            loading={accepting}
-            disabled={isFull}
-          >
-            {isFull ? "受注枠が埋まっています" : "この依頼を受ける"}
-          </Button>
-        )}
+        ) : null}
       </div>
     </div>
   );
