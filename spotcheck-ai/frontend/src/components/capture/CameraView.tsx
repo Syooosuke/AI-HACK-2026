@@ -284,26 +284,32 @@ export function CameraView({
           )}
         </div>
 
-        <TimestampOverlay now={now} />
+        {/*
+          上部に出るものは縦に積む。時刻・カメラのエラー・前回の指摘をそれぞれ
+          absolute で置くと同じ座標に重なり、どれも読めなくなる
+        */}
+        <div className="pointer-events-none absolute inset-x-4 top-16 flex flex-col items-center gap-2">
+          <TimestampOverlay now={now} />
 
-        {cameraError && (
-          <div className="absolute inset-x-4 top-28 rounded-xl bg-amber-500/95 px-3 py-2 text-xs text-white">
-            {cameraError}
-          </div>
-        )}
+          {cameraError && (
+            <div className="w-full rounded-xl bg-amber-500/95 px-3 py-2 text-xs text-white">
+              {cameraError}
+            </div>
+          )}
 
-        {retakeIssues.length > 0 && (
-          <div className="absolute inset-x-4 top-16 rounded-xl bg-fail/95 px-3 py-2 text-white">
-            <p className="text-[11px] font-bold">前回の指摘</p>
-            <ul className="mt-0.5 space-y-0.5">
-              {retakeIssues.map((issue) => (
-                <li key={issue} className="text-xs leading-snug">
-                  ・{issue}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+          {retakeIssues.length > 0 && (
+            <div className="w-full rounded-xl bg-fail/95 px-3 py-2 text-white">
+              <p className="text-[11px] font-bold">前回の指摘</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {retakeIssues.map((issue) => (
+                  <li key={issue} className="text-xs leading-snug">
+                    ・{issue}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
 
         {!gpsReady && (
           <div className="absolute inset-x-4 bottom-4 rounded-xl bg-red-600/95 px-3 py-2 text-center text-xs font-bold text-white">
