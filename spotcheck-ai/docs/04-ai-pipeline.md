@@ -122,7 +122,69 @@ curl https://api.orcarouter.ai/v1/chat/completions \
 | 5xx / タイムアウト | 指数バックオフでリトライ |
 | 400 | リトライせず `AIServiceError`。リクエストボディをログに残す（画像は除く） |
 
-### 1.2 インターフェース定義
+### 1.2 モデルの振り分け（用途 × リスク）
+
+**分類軸は「画像の有無」ではなく「間違えたときの損失」。**
+画像の有無で分けると、中核の検品と飾りのサムネイルが同じ扱いになってしまう。
+
+| 段階 | 間違えると何が起きるか | 該当するプロンプト |
+|---|---|---|
+| S: 取り返しがつかない | 犯罪の幇助・不当な失格・個人情報の公開 | 依頼審査 / **画像検品** / マスキング座標 |
+| A: 品質に響くが回復可能 | 納品文が的外れ | 調査結果の総括 |
+| B: やり直しが効く | 見た目が少し悪い | 詳細メッセージ生成 / サムネイル情景説明 |
+
+用途ごとに環境変数でモデルを指定する。未設定なら `ORCA_ROUTER_LIGHT` /
+`ORCA_ROUTER_VISION` の既定へ落ちる。
+
+| 環境変数 | 用途 | `model_key` |
+|---|---|---|
+| `ORCA_MODEL_TASK_REVIEW` | 依頼審査 | `task_review` |
+| `ORCA_MODEL_IMAGE_VALIDATION` | 画像検品 | `image_validation` |
+| `ORCA_MODEL_MASKING` | マスキング座標 | `masking` |
+| `ORCA_MODEL_RESULT_SUMMARY` | 調査結果の総括 | `result_summary` |
+| `ORCA_MODEL_TASK_DESCRIPTION` | 詳細メッセージ生成 | `task_description` |
+| `ORCA_MODEL_THUMBNAIL` | サムネイル情景説明 | `thumbnail` |
+
+> **`orcarouter/auto` を重要な用途に使わない。**
+> 中身は予告なく変わる（仕様書が「既定は grok/grok-4.5」と書いていた時期に、
+> 実体は `qwen3.7-plus` だった）。品質が落ちても気づけないため、明示指定する。
+
+#### 冗長化 — 重要な判定は1回の呼び出しに賭けない
+
+同じ画像・同じプロンプト・`temperature=0.2` でも、**スコアが 30 と 95 のように
+合否をまたいで振れる**ことを実測した。決定性はパラメータでは買えないため、
+呼び出しを重ねて多数決で吸収する。
+
+| 環境変数 | 効果 |
+|---|---|
+| `ORCA_REVIEW_JURY` | 依頼審査を、主モデル＋ここに並べたモデルで**並行**実行し多数決 |
+| `ORCA_VALIDATION_JURY` | 検品のスコアが境界に入ったときだけ追加で判定させ多数決 |
+| `ORCA_VALIDATION_BOUNDARY` | 境界の幅（既定15）。`\|score − しきい値\| ≤ 幅` で再判定 |
+
+**全件を3回呼ばないのは、振れるのが境界付近だけだから。** 明らかな合格・不合格は
+2回とも一致した。待っているのは現地のワーカーなので、待ち時間を一律3倍にする
+価値はない。
+
+票が同数のとき（2モデルで割れたときは必ずこうなる）は、
+`rejected > needs_info > approved` の順に**慎重な側**を採る。
+公開してからでは取り返しがつかないのに対し、却下は書き直せば済むという非対称性による。
+
+呼び出しが1件失敗しても、残った票で判定を続ける。全滅したときだけ `AIServiceError`。
+
+#### モデルを変えるときの回帰確認
+
+モデルもプロンプトも変わる。**「気づいたら検品精度が落ちていた」を防げるのは実測だけ**なので、
+変更時は必ず次を流す。実際に課金が発生するためCIには入れない。
+
+```bash
+cd backend
+ORCA_API_KEY=... ./.venv/bin/python -m scripts.bench_models
+```
+
+実写真5ケースについて、合否・被写体の有無が模範解答と一致するか、
+2回流して合否が割れないか、何秒かかるかを表で出す。
+
+### 1.3 インターフェース定義
 
 `backend/app/services/orca_client.py`
 
@@ -156,7 +218,7 @@ class OrcaResult:
     is_stub: bool
 ```
 
-### 1.3 実装要件
+### 1.4 実装要件
 
 - `tier="light"` は `ORCA_ROUTER_LIGHT`、`tier="vision"` は `ORCA_ROUTER_VISION` の値を `model` に設定する。どちらも既定値は `orcarouter/auto`。
 - **リトライ**: 429・5xx・タイムアウト・JSONパース失敗時に `ORCA_MAX_RETRIES` 回まで指数バックオフ（1s, 2s）で再試行する。401/403/400 はリトライしない。
@@ -166,7 +228,7 @@ class OrcaResult:
 - 全呼び出しについて `ai_invocations` にログを記録する。**画像のbase64は保存せず、URLまたは `"<image omitted>"` に置換する。**
 - 呼び出しが最終的に失敗したら `AIServiceError` を送出する。
 
-### 1.4 スタブモード（必須）
+### 1.5 スタブモード（必須）
 
 `ORCA_STUB_MODE=true` または `ORCA_API_KEY` 未設定のとき、HTTP通信を行わず固定レスポンスを返す。
 

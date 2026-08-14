@@ -15,6 +15,7 @@ async def generate(title: str, orca: OrcaClient) -> str:
         user_prompt=build_user_prompt(normalized_title),
         response_schema=TaskDescriptionGenerationResult,
         tier="light",
+        model_key="task_description",
         max_tokens=300,
         related_type="task_draft",
         recorder=ai_invocation_repo.create_autonomous,

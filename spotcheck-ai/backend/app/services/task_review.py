@@ -6,11 +6,14 @@ Phase 1 では OrcaClient のスタブ応答を使う（プロンプトの実装
 
 from __future__ import annotations
 
+import asyncio
+from collections import Counter
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.exceptions import AIServiceError
 from app.core.logging import get_logger
 from app.core.storage import StorageBackend
 from app.models import NotificationType, Task, TaskStatus
@@ -20,7 +23,7 @@ from app.repositories import ai_invocation_repo
 from app.schemas.ai import TaskReviewResult
 from app.schemas.task import ReviewChecks, ReviewResult
 from app.services import content_filter, notification_service
-from app.services.orca_client import ImageInput, OrcaClient, encode_image_for_vlm
+from app.services.orca_client import ImageInput, OrcaClient, OrcaResult, encode_image_for_vlm
 
 logger = get_logger(__name__)
 
@@ -48,6 +51,23 @@ DECISION_TO_STATUS = {
     "needs_info": TaskStatus.NEEDS_INFO,
     "rejected": TaskStatus.REJECTED,
 }
+
+#: 票が割れて同数になったときの優先順位。
+#: **より慎重な側を採る。** 公開してしまってからでは取り返しがつかないのに対し、
+#: 却下・情報補足は依頼者が書き直せば済むため。
+_TIE_BREAK_ORDER = ("rejected", "needs_info", "approved")
+
+
+def majority_decision(decisions: list[str]) -> str:
+    """複数モデルの判定を多数決でまとめる。
+
+    同数のときは `_TIE_BREAK_ORDER` の順に慎重な側を採る
+    （2モデルで意見が割れたときは必ずこの経路になる）。
+    """
+    counts = Counter(decisions)
+    top = max(counts.values())
+    tied = [d for d in _TIE_BREAK_ORDER if counts.get(d) == top]
+    return tied[0]
 
 
 async def _load_reference_images(
@@ -118,26 +138,57 @@ async def review_task(
     # スタブモードでは画像を送らないため、無駄なダウンロードを避ける
     images = await _load_reference_images(task, storage, skip=orca.is_stub)
 
-    orca_result = await orca.complete_json(
-        purpose="task_review",
-        system_prompt=SYSTEM_PROMPT,
-        user_prompt=build_user_prompt(task, has_reference_images=has_reference_images),
-        response_schema=TaskReviewResult,
-        images=images or None,
-        # 参考画像があるときは vision ルーターへ切り替える（docs/04-ai-pipeline.md 2.1）
-        tier="vision" if images else "light",
-        related_type="task",
-        related_id=task.id,
-        # 審査が失敗して業務トランザクションがロールバックしても監査ログは残す
-        recorder=ai_invocation_repo.create_autonomous,
-    )
-    result = orca_result.parsed
-    assert isinstance(result, TaskReviewResult)
+    async def ask(model: str | None) -> OrcaResult:
+        return await orca.complete_json(
+            purpose="task_review",
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=build_user_prompt(task, has_reference_images=has_reference_images),
+            response_schema=TaskReviewResult,
+            images=images or None,
+            # 参考画像があるときは vision ルーターへ切り替える（docs/04-ai-pipeline.md 2.1）
+            tier="vision" if images else "light",
+            model_key="task_review",
+            model=model,
+            related_type="task",
+            related_id=task.id,
+            # 審査が失敗して業務トランザクションがロールバックしても監査ログは残す
+            recorder=ai_invocation_repo.create_autonomous,
+        )
 
-    decision = decide(result, score_threshold=settings.task_review_score_threshold)
-    return _finalize(
-        session, task=task, result=result, decision=decision, is_stub=orca_result.is_stub
+    # 主モデルに加え、合議用のモデルへ**同時に**問い合わせる。
+    # 直列にすると待ち時間が人数分伸びるため、並行で投げる。
+    jury = settings.orca_review_jury_models
+    outcomes = await asyncio.gather(
+        ask(None), *(ask(model) for model in jury), return_exceptions=True
     )
+
+    results: list[TaskReviewResult] = []
+    is_stub = orca.is_stub
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            # 1つ落ちても残りで判定する。全滅した場合のみ下で例外にする
+            logger.warning("依頼審査の合議で1件失敗しました", extra={"task_id": str(task.id)})
+            continue
+        parsed = outcome.parsed
+        assert isinstance(parsed, TaskReviewResult)
+        results.append(parsed)
+        is_stub = outcome.is_stub
+
+    if not results:
+        raise AIServiceError("依頼審査に失敗しました。")
+
+    decisions = [decide(r, score_threshold=settings.task_review_score_threshold) for r in results]
+    decision = majority_decision(decisions)
+    # 採用した判定を出した回答のうち最初のものを、表示用の内容として使う
+    result = next(r for r, d in zip(results, decisions, strict=True) if d == decision)
+
+    if len(results) > 1:
+        logger.info(
+            "依頼審査を合議で決定しました",
+            extra={"task_id": str(task.id), "votes": decisions, "decision": decision},
+        )
+
+    return _finalize(session, task=task, result=result, decision=decision, is_stub=is_stub)
 
 
 def _finalize(

@@ -23,6 +23,7 @@ async def generate_result_summary(
         images=[ImageInput(base64_data=encode_image_for_vlm(processed_image))],
         response_schema=ResultSummaryResult,
         tier="vision",
+        model_key="result_summary",
         related_type="submission",
         related_id=submission.id,
         recorder=ai_invocation_repo.create_autonomous,

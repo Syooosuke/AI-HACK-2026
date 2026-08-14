@@ -346,9 +346,7 @@ def test_client_api_never_exposes_the_raw_bucket(
     client_headers = auth_headers(users["client"])
     worker_headers = auth_headers(users["worker"])
     with TestClient(app) as api:
-        submission_status = api.get(
-            f"/api/submissions/{submission.id}", headers=worker_headers
-        )
+        submission_status = api.get(f"/api/submissions/{submission.id}", headers=worker_headers)
         bodies = [
             api.get(f"/api/tasks/{submission.task_id}/results", headers=client_headers).text,
             api.get(f"/api/tasks/{submission.task_id}", headers=client_headers).text,
