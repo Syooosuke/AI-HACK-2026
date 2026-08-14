@@ -142,18 +142,17 @@ async def apply_masking(
         _blur_region(image, expanded, settings.blur_kernel_ratio)
         regions.append(_region("face", "yolo_face", expanded, width, height, blurred=True))
 
+    # 一般モデルの推論は1回だけ行い、結果を人物と車両へ振り分ける。
+    general_detections = _detect(models.general, image, settings.yolo_confidence_threshold)
+
     # --- 人物（ぼかさない。検出結果のみ記録） --------------------------------
     person_boxes = [
-        box
-        for box, label in _detect(models.general, image, settings.yolo_confidence_threshold)
-        if label == "person"
+        box for box, label in general_detections if label == "person"
     ]
 
     # --- 車両（プレート探索のヒントとして使う） ------------------------------
     vehicle_boxes = [
-        box
-        for box, label in _detect(models.general, image, settings.yolo_confidence_threshold)
-        if label in VEHICLE_CLASSES
+        box for box, label in general_detections if label in VEHICLE_CLASSES
     ]
 
     # --- ナンバープレート・表札（VLMへ座標を問い合わせる） --------------------

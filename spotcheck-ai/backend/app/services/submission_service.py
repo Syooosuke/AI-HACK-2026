@@ -182,7 +182,9 @@ async def get_submission_status(
             location_verified=bool(
                 location.get("within_tolerance") and location.get("timestamp_consistent")
             ),
-            privacy_masked=bool((submission.masking_result or {}).get("regions")),
+            # 対象が0件でも、マスキング工程を正常完了していれば保護チェックは成功。
+            # `regions` の有無は「対象が存在したか」であり、処理成否ではない。
+            privacy_masked=(submission.masking_result or {}).get("skipped") is False,
         ),
         issues=issues,
         retake=RetakeInfo(

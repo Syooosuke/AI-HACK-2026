@@ -196,6 +196,35 @@ def test_subject_missing_fails_even_with_high_score(
     assert submission.ai_validation_status is ValidationStatus.REJECTED
 
 
+def test_person_in_frame_does_not_cause_rejection(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象が写っている場合、人物・顔の写り込みだけでは不合格にしない。"""
+    submission = submit_and_validate(
+        session,
+        users,
+        monkeypatch,
+        vlm=vlm_output(
+            score=30,
+            subject_present=True,
+            framing_ok=False,
+            observed_scene="建物の外壁と屋根、その手前にいる人物",
+            issues=[
+                {
+                    "code": "OTHER",
+                    "message": "人物を避け、外壁や屋根の劣化状態が分かる近景を撮影してください",
+                }
+            ],
+            summary="建物は写っていますが人物が邪魔で詳細が確認できません。",
+        ),
+    )
+
+    assert submission.ai_validation_status is ValidationStatus.APPROVED
+    assert submission.ai_score == get_settings().submission_score_threshold
+    assert submission.ai_feedback["checks"]["framing_ok"] is True
+    assert submission.ai_feedback["issues"] == []
+
+
 @pytest.mark.parametrize(
     ("code", "message", "overrides"),
     [
@@ -317,12 +346,19 @@ def test_client_api_never_exposes_the_raw_bucket(
     client_headers = auth_headers(users["client"])
     worker_headers = auth_headers(users["worker"])
     with TestClient(app) as api:
+        submission_status = api.get(
+            f"/api/submissions/{submission.id}", headers=worker_headers
+        )
         bodies = [
             api.get(f"/api/tasks/{submission.task_id}/results", headers=client_headers).text,
             api.get(f"/api/tasks/{submission.task_id}", headers=client_headers).text,
             api.get(f"/api/submissions/{submission.id}", headers=client_headers).text,
-            api.get(f"/api/submissions/{submission.id}", headers=worker_headers).text,
+            submission_status.text,
         ]
+
+    # プライバシー対象が0件でも、マスキング工程が完了していれば成功表示にする。
+    assert submission.masking_result["regions"] == []
+    assert submission_status.json()["checks"]["privacyMasked"] is True
 
     for body in bodies:
         assert settings.storage_bucket_raw not in body

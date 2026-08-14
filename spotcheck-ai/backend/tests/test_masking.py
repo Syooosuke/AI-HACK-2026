@@ -58,6 +58,24 @@ def install_models(
     monkeypatch.setattr(masking, "_detect", fake_detect)
 
 
+def install_counted_models(
+    monkeypatch: pytest.MonkeyPatch, *, faces: list, persons: list, vehicles: list
+) -> dict[str, int]:
+    """各YOLOモデルの推論回数も記録するテスト用モデル。"""
+    calls = {"general": 0, "face": 0}
+    monkeypatch.setattr(masking, "load_models", lambda: _Models(GENERAL, FACE, None))
+
+    def fake_detect(model: Any, _image: Image.Image, _confidence: float):
+        if model is FACE:
+            calls["face"] += 1
+            return [(box, "FACE") for box in faces]
+        calls["general"] += 1
+        return [(box, "person") for box in persons] + [(box, "car") for box in vehicles]
+
+    monkeypatch.setattr(masking, "_detect", fake_detect)
+    return calls
+
+
 def install_vlm(
     monkeypatch: pytest.MonkeyPatch, regions: list[dict] | None, *, fail: bool = False
 ) -> OrcaClient:
@@ -155,6 +173,24 @@ async def test_blurs_faces_but_not_persons(monkeypatch: pytest.MonkeyPatch) -> N
         assert variance(masked, face_box) < 200
         # 人物の領域は元の細かい模様が残る
         assert variance(masked, person_box) > 1000
+
+
+async def test_runs_each_yolo_model_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """一般モデルの結果を人物・車両で共有し、同じ画像を二重推論しない。"""
+    calls = install_counted_models(
+        monkeypatch,
+        faces=[(20, 20, 80, 80)],
+        persons=[(100, 50, 180, 250)],
+        vehicles=[(200, 100, 360, 260)],
+    )
+    orca = install_vlm(monkeypatch, [])
+
+    outcome = await apply_masking(base_image(), orca=orca)
+
+    assert outcome.result["face_count"] == 1
+    assert outcome.result["person_count"] == 1
+    assert outcome.result["vehicle_count"] == 1
+    assert calls == {"general": 1, "face": 1}
 
 
 async def test_license_plate_is_blacked_out(monkeypatch: pytest.MonkeyPatch) -> None:
