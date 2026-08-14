@@ -1,0 +1,167 @@
+# main へマージされたら、そのコードを本番（Cloud Run）へ反映する。
+#
+# **main = 本番** を機械的に保証するためのワークフロー。
+# 手元の作業ツリーからデプロイすると「誰の手元が本番か」が曖昧になるため、
+# デプロイ経路をここに一本化する。
+#
+# 認証は Workload Identity 連携（鍵ファイルを持たない方式）。
+# 長期有効なサービスアカウントキーを GitHub に置かずに済む。
+#
+# 手動実行もできる（workflow_dispatch）。マイグレーションだけ流したい場合などに使う。
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # アプリのコードと設定が変わったときだけ動かす。ドキュメントだけの変更では動かさない
+      - "spotcheck-ai/backend/**"
+      - "spotcheck-ai/frontend/**"
+      - "spotcheck-ai/deploy/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+# 同時に走らせない。後から来たものを優先し、古いデプロイは打ち切る
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: gmp-demo-project-770876903
+  REGION: asia-northeast1
+  BACKEND_SERVICE: spotcheck-backend
+  FRONTEND_SERVICE: spotcheck-frontend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # Workload Identity 連携で ID トークンを受け取るために必要
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Google Cloud へ認証する
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # スキーマを先に更新する。テーブルが無い状態で新しいコードが動くと 500 になるため、
+      # **デプロイより前**に必ず流す。
+      - name: DBマイグレーションを適用する
+        working-directory: spotcheck-ai/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m pip install --upgrade pip
+          # 依存は pyproject から取る。手書きの一覧だと、将来 app/models や app/core/config に
+          # import が増えたときに気づけないまま壊れる。
+          # ultralytics だけ除く（PyTorch を数GB引いてくるが、マイグレーションには不要）。
+          python - <<'PY' > /tmp/requirements.txt
+          import tomllib
+
+          with open("pyproject.toml", "rb") as f:
+              deps = tomllib.load(f)["project"]["dependencies"]
+          print("\n".join(d for d in deps if not d.startswith("ultralytics")))
+          PY
+          pip install -r /tmp/requirements.txt
+          alembic upgrade head
+
+      - name: バックエンドをデプロイする
+        run: |
+          python - <<'PY'
+          import json, os
+          values = {
+              "APP_ENV": "production",
+              "DATABASE_URL": os.environ["DATABASE_URL"],
+              "JWT_SECRET": os.environ["JWT_SECRET"],
+              "SUPABASE_URL": os.environ["SUPABASE_URL"],
+              "SUPABASE_SECRET_KEY": os.environ["SUPABASE_SECRET_KEY"],
+              "ORCA_API_KEY": os.environ.get("ORCA_API_KEY", ""),
+              "ORCA_STUB_MODE": os.environ.get("ORCA_STUB_MODE", "true"),
+              "GOOGLE_MAPS_SERVER_API_KEY": os.environ.get("GOOGLE_MAPS_SERVER_API_KEY", ""),
+              "CORS_ORIGINS": os.environ["FRONTEND_URL"],
+          }
+          # 空の値は渡さない（既存の設定を消さないため）
+          values = {k: v for k, v in values.items() if v}
+          with open("/tmp/backend-env.yaml", "w", encoding="utf-8") as f:
+              json.dump(values, f, ensure_ascii=False, indent=2)
+          PY
+          gcloud run deploy "$BACKEND_SERVICE" \
+            --source spotcheck-ai/backend \
+            --quiet \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 900 \
+            --concurrency 20 \
+            --max-instances 3 \
+            --env-vars-file /tmp/backend-env.yaml
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ORCA_API_KEY: ${{ secrets.ORCA_API_KEY }}
+          ORCA_STUB_MODE: ${{ vars.ORCA_STUB_MODE || 'true' }}
+          GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+
+      # NEXT_PUBLIC_* はビルド時にJSへ焼き込まれるため、--build-arg として渡す必要がある。
+      # `--build-env-vars` では Docker まで届かず、空文字が埋め込まれてしまう。
+      - name: フロントエンドをビルドする
+        run: |
+          BACKEND_URL=$(gcloud run services describe "$BACKEND_SERVICE" --region "$REGION" --format='value(status.url)')
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${FRONTEND_SERVICE}:${GITHUB_SHA::12}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          gcloud builds submit spotcheck-ai/frontend \
+            --config spotcheck-ai/frontend/cloudbuild.yaml \
+            --quiet \
+            --substitutions "_IMAGE=${IMAGE},_API_BASE_URL=${BACKEND_URL},_MAPS_KEY=${MAPS_KEY},_LAT=35.6595,_LNG=139.7005"
+        env:
+          MAPS_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+
+      - name: フロントエンドをデプロイする
+        run: |
+          gcloud run deploy "$FRONTEND_SERVICE" \
+            --image "$IMAGE" \
+            --quiet \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --memory 1Gi \
+            --max-instances 5
+
+      - name: 疎通を確認する
+        run: |
+          BACKEND_URL=$(gcloud run services describe "$BACKEND_SERVICE" --region "$REGION" --format='value(status.url)')
+          FRONTEND_URL=$(gcloud run services describe "$FRONTEND_SERVICE" --region "$REGION" --format='value(status.url)')
+          echo "バックエンド: $BACKEND_URL"
+          echo "フロントエンド: $FRONTEND_URL"
+
+          # ヘルスチェックと、ログイン画面が返ることを確認する
+          health=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$BACKEND_URL/api/health")
+          login=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$FRONTEND_URL/login")
+          echo "health=$health login=$login"
+          test "$health" = "200"
+          test "$login" = "200"
+
+          {
+            echo "### デプロイ完了"
+            echo ""
+            echo "| | URL |"
+            echo "|---|---|"
+            echo "| フロントエンド | $FRONTEND_URL |"
+            echo "| バックエンド | $BACKEND_URL |"
+          } >> "$GITHUB_STEP_SUMMARY"
