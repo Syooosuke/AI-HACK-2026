@@ -15,6 +15,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { isPublicPath } from "@/components/auth/AuthGuard";
+import { Logo } from "@/components/layout/Logo";
 import { Avatar } from "@/components/ui/Avatar";
 import { getUnreadNotificationCount } from "@/lib/api/notifications";
 import { getCurrentUser, subscribeSession } from "@/lib/session";
@@ -115,8 +116,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen md:flex">
       {/* PC: 左の固定サイドナビ */}
       <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-slate-200 bg-white px-4 py-6 md:flex lg:w-64">
-        <Link href="/home" className="mb-6 block px-2 text-base font-bold text-slate-800">
-          SpotCheck AI
+        <Link href="/home" className="mb-6 block px-2" aria-label="ホーム">
+          <Logo height={26} />
         </Link>
         <nav className="flex flex-1 flex-col gap-1">
           {TABS.map((tab) =>
@@ -173,8 +174,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </button>
             )}
             {/* PC はサイドナビにロゴがあるため出さない */}
-            <Link href="/home" className="text-sm font-bold text-slate-800 md:hidden">
-              SpotCheck AI
+            <Link href="/home" className="md:hidden" aria-label="ホーム">
+              <Logo height={22} />
             </Link>
           </div>
           <Link

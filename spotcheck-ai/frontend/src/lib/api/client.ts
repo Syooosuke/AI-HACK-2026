@@ -40,6 +40,45 @@ export function resolveApiUrl(url: string): string {
   return new URL(url, `${env.apiBaseUrl.replace(/\/$/, "")}/`).toString();
 }
 
+/**
+ * 読み取り系のリクエストだけ、一時的な失敗を1度だけ再試行する。
+ *
+ * 「サーバーに接続できません」が頻繁に出ていた理由は主に次の2つ。
+ * 1. Cloud Run は無アクセスが続くとインスタンスを落とすため、久しぶりの1回目が
+ *    立ち上がりに間に合わず落ちることがある
+ * 2. モバイル回線の一瞬の切断。10秒ごとのポーリングがあるため、確率的に必ず当たる
+ *
+ * どちらも**すぐ再試行すれば通る**。書き込み（POST/DELETE）は再試行しない。
+ * 二重に依頼が作られる・二重に受注されるといった実害が出るため。
+ */
+const RETRY_DELAY_MS = 600;
+const RETRYABLE_METHODS = new Set(["GET", "HEAD"]);
+
+async function fetchWithRetry(url: string, init: RequestInit, method: string): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (cause) {
+    if (!RETRYABLE_METHODS.has(method)) {
+      throw toNetworkError(cause);
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    try {
+      return await fetch(url, init);
+    } catch (retryCause) {
+      throw toNetworkError(retryCause);
+    }
+  }
+}
+
+function toNetworkError(cause: unknown): ApiError {
+  return new ApiError(
+    0,
+    "NETWORK_ERROR",
+    "バックエンドに接続できません。サーバーが起動しているか確認してください。",
+    { cause: String(cause) },
+  );
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { body, auth = true, headers, ...rest } = options;
   const requestHeaders = new Headers(headers);
@@ -60,22 +99,17 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     }
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${env.apiBaseUrl}${path}`, {
+  const method = (rest.method ?? "GET").toUpperCase();
+  const response = await fetchWithRetry(
+    `${env.apiBaseUrl}${path}`,
+    {
       ...rest,
       headers: requestHeaders,
       body: requestBody,
       cache: rest.cache ?? "no-store",
-    });
-  } catch (cause) {
-    throw new ApiError(
-      0,
-      "NETWORK_ERROR",
-      "バックエンドに接続できません。サーバーが起動しているか確認してください。",
-      { cause: String(cause) },
-    );
-  }
+    },
+    method,
+  );
 
   if (response.status === 204) {
     return undefined as T;

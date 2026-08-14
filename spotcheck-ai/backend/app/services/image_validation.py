@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -19,6 +22,14 @@ from app.schemas.ai import ImageValidationResult
 from app.services.orca_client import ImageInput, OrcaClient, encode_image_for_vlm
 
 logger = get_logger(__name__)
+
+JST = ZoneInfo("Asia/Tokyo")
+
+
+def _jst_hour(value: datetime) -> int:
+    """撮影時刻の「時」を日本時間で返す。"""
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return aware.astimezone(JST).hour
 
 
 async def validate_image(
@@ -70,8 +81,13 @@ async def validate_image(
         related_id=submission.id,
         # 検品が失敗してロールバックされても監査ログは残す
         recorder=ai_invocation_repo.create_autonomous,
-        # スタブが再撮影ループを再現するために提出回数を渡す（docs/04-ai-pipeline.md 1.4）
-        context={"attempt_no": submission.attempt_no},
+        # スタブが再撮影ループを再現するために提出回数を渡す（docs/04-ai-pipeline.md 1.4）。
+        # 撮影時刻も渡し、スタブが返す daylight_state を実際の時間帯と矛盾させない
+        # （矛盾すると C-5 の環境整合チェックが誤って不整合と判定する）。
+        context={
+            "attempt_no": submission.attempt_no,
+            "captured_hour": _jst_hour(submission.captured_at),
+        },
     )
     parsed = result.parsed
     assert isinstance(parsed, ImageValidationResult)

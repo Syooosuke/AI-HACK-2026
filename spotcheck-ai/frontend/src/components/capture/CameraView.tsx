@@ -46,11 +46,14 @@ export function CameraView({
   onClose,
   submitting,
   attemptLabel,
+  retakeIssues = [],
 }: {
   onSubmit: (result: CaptureResult) => void;
   onClose: () => void;
   submitting: boolean;
   attemptLabel: string;
+  /** 再撮影のとき、前回の検品で指摘された内容。撮る前に読ませる */
+  retakeIssues?: string[];
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -215,6 +218,13 @@ export function CameraView({
           className="min-h-0 flex-1 object-contain"
         />
         <div className="space-y-3 bg-black px-4 pb-8 pt-4">
+          {retakeIssues.length > 0 && (
+            <ul className="rounded-xl bg-white/10 px-3 py-2 text-xs text-white/80">
+              {retakeIssues.map((issue) => (
+                <li key={issue}>・{issue}</li>
+              ))}
+            </ul>
+          )}
           <p className="text-center text-xs text-white/70">
             {captured.metadata.lat.toFixed(5)}, {captured.metadata.lng.toFixed(5)} ／{" "}
             {new Date(captured.metadata.capturedAt).toLocaleTimeString("ja-JP")}
@@ -279,6 +289,19 @@ export function CameraView({
         {cameraError && (
           <div className="absolute inset-x-4 top-28 rounded-xl bg-amber-500/95 px-3 py-2 text-xs text-white">
             {cameraError}
+          </div>
+        )}
+
+        {retakeIssues.length > 0 && (
+          <div className="absolute inset-x-4 top-16 rounded-xl bg-fail/95 px-3 py-2 text-white">
+            <p className="text-[11px] font-bold">前回の指摘</p>
+            <ul className="mt-0.5 space-y-0.5">
+              {retakeIssues.map((issue) => (
+                <li key={issue} className="text-xs leading-snug">
+                  ・{issue}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

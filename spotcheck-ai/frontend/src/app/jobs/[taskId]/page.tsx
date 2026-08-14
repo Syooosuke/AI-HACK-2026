@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { StreetViewPanel } from "@/components/map/StreetViewPanel";
 import { CornerBadge } from "@/components/task/CornerBadge";
+import { TimeWindow } from "@/components/task/TimeWindow";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { Avatar } from "@/components/ui/Avatar";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
@@ -20,7 +21,6 @@ import { ApiError, resolveApiUrl } from "@/lib/api/client";
 import { likeTask, unlikeTask } from "@/lib/api/social";
 import { toMessage } from "@/lib/api/errorMessages";
 import { acceptTask, getTask, withdrawAssignment } from "@/lib/api/tasks";
-import { formatDateTime, formatRemaining } from "@/lib/datetime";
 import { formatCoords, formatDistanceWithWalk } from "@/lib/geo";
 import type { TaskDetail } from "@/types/api";
 
@@ -50,8 +50,11 @@ export default function WorkerTaskDetailPage() {
     setAccepting(true);
     try {
       await acceptTask(taskId);
-      toast.success("この依頼を受注しました。撮影に進んでください。");
-      router.push(`/jobs/${taskId}/capture`);
+      // カメラへ直行させず、この詳細ページに留まる。撮影条件・参考画像・
+      // ストリートビューを確認してから「撮影に進む」を押せるようにするため
+      toast.success("この依頼を受注しました。内容を確認して撮影に進んでください。");
+      await load();
+      setAccepting(false);
     } catch (cause) {
       toast.error(toMessage(cause));
       if (cause instanceof ApiError && cause.code === "TASK_FULL") {
@@ -197,6 +200,8 @@ export default function WorkerTaskDetailPage() {
           <StreetViewPanel position={{ lat: task.locationLat, lng: task.locationLng }} />
         </Card>
 
+        <TimeWindow from={task.scheduledAt} to={task.deadlineAt} showRemaining />
+
         <Card>
           <InfoRow
             label="現地までの距離"
@@ -216,16 +221,6 @@ export default function WorkerTaskDetailPage() {
             icon={<span>📍</span>}
           />
           <InfoRow
-            label="撮影希望日時"
-            value={formatDateTime(task.scheduledAt)}
-            icon={<span>🕒</span>}
-          />
-          <InfoRow
-            label="提出期限"
-            value={`${formatDateTime(task.deadlineAt)}（${formatRemaining(task.deadlineAt)}）`}
-            icon={<span>⏳</span>}
-          />
-          <InfoRow
             label="報酬"
             value={`¥${task.rewardAmount.toLocaleString()}`}
             icon={<span>💰</span>}
@@ -235,6 +230,13 @@ export default function WorkerTaskDetailPage() {
             value={`${task.remainingSlots}枠`}
             icon={<span>👥</span>}
           />
+          {task.minWorkerRating != null && (
+            <InfoRow
+              label="受注条件"
+              value={`平均評価 ★${task.minWorkerRating.toFixed(1)} 以上`}
+              icon={<span>⭐</span>}
+            />
+          )}
           {task.owner && (
             <InfoRow
               label="依頼主"

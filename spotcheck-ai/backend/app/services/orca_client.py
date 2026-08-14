@@ -690,6 +690,21 @@ def _stub_envelope(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _stub_daylight_state(captured_hour: object) -> str:
+    """申告された撮影時刻（日本時間の「時」）から、もっともらしい光の状態を返す。
+
+    スタブは画像を見ていないため、ここを固定値にすると夜間の撮影で「daylight」を
+    返してしまい、C-5の環境整合チェックが不整合と判定してしまう。
+    """
+    if not isinstance(captured_hour, int):
+        return "unknown"
+    if 7 <= captured_hour < 16:
+        return "daylight"
+    if 16 <= captured_hour < 19 or 5 <= captured_hour < 7:
+        return "twilight"
+    return "night"
+
+
 def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
     """固定応答（docs/04-ai-pipeline.md 1.4）。
 
@@ -720,22 +735,29 @@ def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
         if context.get("stage") == "masking":
             return {"regions": []}
 
+        # 再撮影ループを見せるため、奇数回目の提出はわざと不合格にする。
+        # 不合格の理由に「暗すぎます」を使うと、夜間の撮影で毎回それが出ることになり、
+        # 画像を見ていないことが露骨に分かってしまう。**時間帯に依存しない理由**を使う。
         attempt_no = int(context.get("attempt_no", 1))
+        daylight = _stub_daylight_state(context.get("captured_hour"))
         if attempt_no % 2 == 1:
             return {
                 "score": 45,
                 "subject_present": True,
-                "framing_ok": True,
+                "framing_ok": False,
                 "sharpness_ok": True,
-                "brightness_ok": False,
+                "brightness_ok": True,
                 "reference_match": None,
-                "observed_scene": "夕方の街路と建設中の建物",
-                "daylight_state": "twilight",
+                "observed_scene": "街路と建設中の建物（対象が画面の端に寄っている）",
+                "daylight_state": daylight,
                 "weather_hint": "cloudy",
                 "issues": [
-                    {"code": "TOO_DARK", "message": "暗すぎます。明るい場所で撮影してください"}
+                    {
+                        "code": "ANGLE_MISMATCH",
+                        "message": "対象が端に寄っています。中央に収めて撮り直してください",
+                    }
                 ],
-                "summary": "対象は写っていますが露出が不足しています。",
+                "summary": "対象は写っていますが、画角から一部が外れています。",
             }
         return {
             "score": 88,
@@ -744,8 +766,8 @@ def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
             "sharpness_ok": True,
             "brightness_ok": True,
             "reference_match": None,
-            "observed_scene": "日中の街路と建設中の建物",
-            "daylight_state": "daylight",
+            "observed_scene": "街路と建設中の建物",
+            "daylight_state": daylight,
             "weather_hint": "clear",
             "issues": [],
             "summary": "工事は予定通り進行中。安全対策は適切に実施されています。",
@@ -754,7 +776,17 @@ def _stub_content(purpose: Purpose, context: dict[str, Any]) -> dict[str, Any]:
     if purpose == "environment_check":
         return {"consistent": True, "note": "画像内の光の状態は撮影時刻と矛盾しない"}
 
-    return {"summary": "工事は予定通り進行中。安全対策は適切に実施されています。"}
+    if purpose == "result_summary":
+        # 画像は見られないが、依頼の題目と検品時の所見は分かる。
+        # 固定文を返すとどの依頼でも同じ総括になってしまうため、材料をつないで返す。
+        title = str(context.get("title") or "依頼")
+        observations = context.get("observations")
+        if isinstance(observations, list) and observations:
+            detail = "。".join(str(item).rstrip("。") for item in observations[:2])
+            return {"summary": f"「{title}」について撮影を確認しました。{detail}。"}
+        return {"summary": f"「{title}」について、現地の状況を撮影した画像を確認しました。"}
+
+    return {"summary": "現地の状況を撮影した画像を確認しました。"}
 
 
 @lru_cache

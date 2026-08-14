@@ -104,6 +104,7 @@ export type TaskSummary = {
   deadlineAt: string;
   rewardAmount: number;
   requiredWorkerCount: number;
+  minWorkerRating: number | null;
 };
 
 export type TaskReviewResponse = {
@@ -186,6 +187,8 @@ export type TaskDetail = {
   requiredWorkerCount: number;
   approvedWorkerCount: number;
   remainingSlots: number;
+  /** 受注できるワーカーの最低平均評価。null なら条件なし */
+  minWorkerRating: number | null;
   status: TaskStatus;
   reviewSummary: string | null;
   referenceImages: ReferenceImage[];
@@ -230,6 +233,7 @@ export type NearbyTask = {
   locationAddress: string | null;
   remainingSlots: number;
   requiredWorkerCount: number;
+  minWorkerRating: number | null;
   status: TaskStatus;
   createdAt: string;
   thumbnailUrl: string | null;

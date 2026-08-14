@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Logo } from "@/components/layout/Logo";
 import { Button, Card } from "@/components/ui";
 import { login } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
@@ -49,9 +50,12 @@ export default function LoginPage() {
 
   return (
     <div className="space-y-6 pt-10 md:pt-0">
-      <header className="text-center">
-        <h1 className="text-2xl font-bold text-slate-800">SpotCheck AI</h1>
-        <p className="mt-1 text-xs text-slate-500">現地の「いま」をAIが検品して届ける</p>
+      <header className="flex flex-col items-center text-center">
+        <h1>
+          <Logo height={40} />
+          <span className="sr-only">SpotCheck</span>
+        </h1>
+        <p className="mt-2 text-xs text-slate-500">現地の「いま」をAIが検品して届ける</p>
       </header>
 
       <Card className="space-y-4">

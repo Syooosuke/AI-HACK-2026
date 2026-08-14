@@ -26,6 +26,9 @@ async def generate_result_summary(
         related_type="submission",
         related_id=submission.id,
         recorder=ai_invocation_repo.create_autonomous,
+        # スタブでも依頼ごとに違う総括を返せるようにする。固定文だと、どの依頼でも
+        # 「工事は予定通り」と出てしまい、内容を読んでいないことが露骨に分かる
+        context={"title": task.title, "observations": observations},
     )
     result = response.parsed
     assert isinstance(result, ResultSummaryResult)

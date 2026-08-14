@@ -40,7 +40,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | 入力値不正。`details` にフィールド別エラー |
 | 401 | `UNAUTHENTICATED` `INVALID_CREDENTIALS` | 未ログイン・トークン不正・認証情報の誤り |
-| 403 | `FORBIDDEN` `CANNOT_ACCEPT_OWN_TASK` `CANNOT_LIKE_OWN_TASK` | 他人のリソース・自分の依頼の受注／いいね |
+| 403 | `FORBIDDEN` `CANNOT_ACCEPT_OWN_TASK` `CANNOT_LIKE_OWN_TASK` `RATING_REQUIREMENT_NOT_MET` | 他人のリソース・自分の依頼の受注／いいね・評価条件を満たさない受注 |
 | 404 | `TASK_NOT_FOUND` `SUBMISSION_NOT_FOUND` | |
 | 409 | `TASK_FULL` `ALREADY_ACCEPTED` `INVALID_STATE` `RETAKE_LIMIT_EXCEEDED` `LOGIN_ID_TAKEN` `SAVED_SEARCH_LIMIT` | 状態競合・上限超過 |
 | 413 | `FILE_TOO_LARGE` | 画像サイズ超過 |
@@ -198,6 +198,7 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 | `deadlineAt` | string(ISO8601) | ✓ | `scheduledAt` 以降 |
 | `rewardAmount` | int | ✓ | 100〜100000 |
 | `requiredWorkerCount` | int | ✓ | 1〜10 |
+| `minWorkerRating` | float | | 1.0〜5.0。受注できるワーカーの最低平均評価。省略で条件なし |
 | `referenceImages` | file[] | | 最大3枚、各15MBまで |
 
 **処理フロー**
@@ -414,9 +415,18 @@ HTTPステータスに関わらず、エラーは以下の形式で統一する�
 1. `SELECT ... FOR UPDATE` で tasks をロック。
 2. 自分が出した依頼 → `403 CANNOT_ACCEPT_OWN_TASK`。
 3. `deadline_at` 超過 → `409 INVALID_STATE`。
-4. 同一ワーカーの有効な assignment が既にある → `409 ALREADY_ACCEPTED`。
-5. 空き枠なし → `409 TASK_FULL`。
-6. assignment を `accepted` で作成。tasks を `in_progress` に更新。
+4. 依頼者が `minWorkerRating` を指定していて、**評価があり**かつ平均がそれ未満
+   → `403 RATING_REQUIREMENT_NOT_MET`。評価が1件も無いワーカーは通す
+   （足切りすると評価を得る機会が無く、条件付き依頼が誰にも受けられなくなるため）。
+5. 同一ワーカーの assignment の扱い
+   - `accepted` / `submitted` → `409 ALREADY_ACCEPTED`
+   - **`cancelled`（辞退済み）→ 受け直せる。** 既存の行を `accepted` へ戻す
+     （`(task_id, worker_id)` に一意制約があるため新しい行は作らない）。
+     **`retake_count` は引き継ぐ**（辞退→受け直しで再撮影の上限をやり直せてしまうと
+     D-08 の上限が意味を失うため）
+   - `approved` / `failed` / `expired` → `409 ALREADY_ACCEPTED`
+6. 空き枠なし → `409 TASK_FULL`。
+7. assignment を `accepted` で作成（または再開）。tasks を `in_progress` に更新。
 
 **レスポンス `201`**
 ```json

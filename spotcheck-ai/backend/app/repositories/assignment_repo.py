@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -13,6 +14,20 @@ from app.models import ACTIVE_ASSIGNMENT_STATUSES, AssignmentStatus, Task, TaskA
 def create(session: Session, *, task_id: uuid.UUID, worker_id: uuid.UUID) -> TaskAssignment:
     assignment = TaskAssignment(task_id=task_id, worker_id=worker_id)
     session.add(assignment)
+    session.flush()
+    return assignment
+
+
+def reactivate(session: Session, assignment: TaskAssignment) -> TaskAssignment:
+    """辞退した受注を受け直す。
+
+    (task_id, worker_id) に一意制約があるため新しい行は作れない。既存の行を
+    accepted へ戻す。**retake_count は引き継ぐ**（辞退して受け直すことで再撮影の
+    上限をやり直せてしまうと、D-08 の上限が意味を失うため）。
+    """
+    assignment.status = AssignmentStatus.ACCEPTED
+    assignment.completed_at = None
+    assignment.accepted_at = datetime.now(UTC)
     session.flush()
     return assignment
 

@@ -16,20 +16,14 @@ import { IssueList } from "@/components/task/IssueList";
 import { PollingIndicator } from "@/components/task/PollingIndicator";
 import { ScorePanel } from "@/components/task/ScorePanel";
 import { Button, Card, EmptyState, SectionTitle, Skeleton } from "@/components/ui";
+import { REVIEW_TAG_LABELS, Stars } from "@/components/ui/Stars";
 import { ValidationBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { getSubmission } from "@/lib/api/submissions";
 import { getTask } from "@/lib/api/tasks";
 import { formatElapsed, nextPollInterval, shouldStopPolling } from "@/lib/polling";
-import type { SubmissionStatus, WorkerReviewTag } from "@/types/api";
-
-const REVIEW_TAG_LABELS: Record<WorkerReviewTag, string> = {
-  as_requested: "依頼どおり",
-  clear_photo: "写真が見やすい",
-  fast_response: "対応が早い",
-  accurate_location: "位置情報が正確",
-};
+import type { SubmissionStatus } from "@/types/api";
 
 export default function SubmissionStatusPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -211,15 +205,7 @@ export default function SubmissionStatusPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-bold text-slate-700">今回の評価</span>
-                <span
-                  className="text-xl tracking-wide text-amber-400"
-                  aria-label={`${data.workerReview.rating}つ星`}
-                >
-                  {"★".repeat(data.workerReview.rating)}
-                  <span className="text-slate-200">
-                    {"★".repeat(5 - data.workerReview.rating)}
-                  </span>
-                </span>
+                <Stars value={data.workerReview.rating} size="lg" />
               </div>
               {data.workerReview.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2">

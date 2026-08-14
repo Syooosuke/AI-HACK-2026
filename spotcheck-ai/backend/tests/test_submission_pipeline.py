@@ -56,7 +56,9 @@ def install_vlm(monkeypatch: pytest.MonkeyPatch, content: str) -> None:
                 {"summary": "提出画像では、日中の街路と建設中の建物が確認できます。"},
                 ensure_ascii=False,
             )
-            if "現地調査結果をクライアント向けに要約" in system_prompt
+            # 総括生成か画像検品かは system_prompt でしか見分けられない。
+            # 文面を変えたらここも直す（一致しないと検品側の応答が総括に混ざる）
+            if "依頼したクライアントへ報告" in system_prompt
             else content
         )
         return httpx.Response(
