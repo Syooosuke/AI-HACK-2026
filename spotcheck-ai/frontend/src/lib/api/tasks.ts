@@ -84,6 +84,11 @@ export function getTask(
   return apiFetch<TaskDetail>(`/api/tasks/${taskId}${query}`);
 }
 
+/** 保存済みのAI審査結果を再取得する（お知らせから画面②を開くため）。 */
+export function getTaskReview(taskId: string): Promise<TaskReviewResponse> {
+  return apiFetch<TaskReviewResponse>(`/api/tasks/${taskId}/review`);
+}
+
 export type NearbyQuery = {
   lat: number;
   lng: number;
