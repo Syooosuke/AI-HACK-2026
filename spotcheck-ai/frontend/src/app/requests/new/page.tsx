@@ -49,7 +49,7 @@ export default function NewTaskPage() {
   const [deadlineAt, setDeadlineAt] = useState(() => isoToLocalInput(minutesFromNow(60 * 6)));
   const [workerCount, setWorkerCount] = useState(1);
   const [minRating, setMinRating] = useState<number | null>(null);
-  const [reward, setReward] = useState(2000);
+  const [reward, setReward] = useState(500);
   const [images, setImages] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [generatingDescription, setGeneratingDescription] = useState(false);

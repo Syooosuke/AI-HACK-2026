@@ -13,11 +13,9 @@ import { formatDateTime, formatRemaining } from "@/lib/datetime";
 const WORDING = {
   worker: {
     title: "撮影してほしい時間帯",
-    caption: "この幅のなかで撮影してください。",
   },
   client: {
     title: "撮影してもらう時間帯",
-    caption: "この幅のなかで撮影されます。",
   },
 } as const;
 
@@ -44,11 +42,11 @@ export function TimeWindow({
       }`}
     >
       <div className="p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             <span
               aria-hidden
-              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
                 isClient ? "bg-blue-100/70 text-client" : "bg-emerald-100/70 text-worker"
               }`}
             >
@@ -65,7 +63,6 @@ export function TimeWindow({
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-bold text-slate-700">{wording.title}</span>
-              <span className="mt-0.5 block text-[11px] text-slate-400">{wording.caption}</span>
             </span>
           </div>
           {showRemaining && (
