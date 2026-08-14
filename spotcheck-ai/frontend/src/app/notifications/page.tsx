@@ -15,6 +15,7 @@ import {
   markNotificationRead,
 } from "@/lib/api/notifications";
 import { formatRelative } from "@/lib/datetime";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { NotificationItem, NotificationType } from "@/types/api";
 
 const POLL_INTERVAL_MS = 10_000;
@@ -22,6 +23,7 @@ const NOTIFICATIONS_PER_PAGE = 10;
 
 /** 取得がこれより長引いたときだけ、読み込み中の表示を出す。 */
 const SLOW_FETCH_MS = 800;
+const NOTIFICATIONS_CACHE_KEY = "notifications";
 
 const TYPE_ICON: Record<NotificationType, string> = {
   task_approved: "✅",
@@ -54,7 +56,9 @@ function routeFor(notification: NotificationItem): string | null {
 export default function NotificationsPage() {
   const router = useRouter();
   const toast = useToast();
-  const [notifications, setNotifications] = useState<NotificationItem[] | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[] | null>(() =>
+    getPageCache<NotificationItem[]>(NOTIFICATIONS_CACHE_KEY) ?? null,
+  );
   const [loadingSlow, setLoadingSlow] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -80,6 +84,10 @@ export default function NotificationsPage() {
     const timer = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    if (notifications) setPageCache(NOTIFICATIONS_CACHE_KEY, notifications);
+  }, [notifications]);
 
   const unreadCount = notifications?.filter((item) => !item.readAt).length ?? 0;
   const totalPages = Math.max(

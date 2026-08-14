@@ -14,31 +14,44 @@ import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { deleteAvatar, getMyReceivedReviews, uploadAvatar } from "@/lib/api/users";
 import { clearSession, getCurrentUser, saveUser, subscribeSession } from "@/lib/session";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { AuthUser, ReceivedWorkerReviews } from "@/types/api";
 
 const LINKS = [
-  { href: "/requests", label: "出した依頼", icon: "📋", hint: "審査状況・結果の確認" },
-  { href: "/jobs", label: "受注した依頼", icon: "📸", hint: "撮影・提出の進行状況" },
+  { href: "/requests", label: "依頼した案件", icon: "📋", hint: "審査状況・結果の確認" },
+  { href: "/jobs", label: "受注した案件", icon: "📸", hint: "撮影・提出の進行状況" },
 ];
 
 /** バックエンドの ALLOWED_IMAGE_TYPES と揃える。 */
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
 
+type MyPageCache = { user: AuthUser | null; reviews: ReceivedWorkerReviews | null };
+const MY_PAGE_CACHE_KEY = "me";
+
 export default function MyPage() {
   const router = useRouter();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const cached = getPageCache<MyPageCache>(MY_PAGE_CACHE_KEY);
+  const [user, setUser] = useState<AuthUser | null | undefined>(() => cached?.user);
   const [saving, setSaving] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   // undefined=読み込み中 / null=取得失敗
-  const [reviews, setReviews] = useState<ReceivedWorkerReviews | null | undefined>(undefined);
+  const [reviews, setReviews] = useState<ReceivedWorkerReviews | null | undefined>(
+    () => cached?.reviews,
+  );
 
   useEffect(() => {
     const sync = () => setUser(getCurrentUser());
     sync();
     return subscribeSession(sync);
   }, []);
+
+  useEffect(() => {
+    if (user !== undefined && reviews !== undefined) {
+      setPageCache<MyPageCache>(MY_PAGE_CACHE_KEY, { user, reviews });
+    }
+  }, [reviews, user]);
 
   useEffect(() => {
     if (!isReviewModalOpen) return;
