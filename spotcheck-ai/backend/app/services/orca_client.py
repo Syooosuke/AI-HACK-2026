@@ -625,18 +625,50 @@ def _json_schema_format(schema: type[BaseModel]) -> dict[str, Any]:
     **プロンプトで「JSONだけ返して」と頼むのをやめ、APIに形を強制させる。**
     実測で、指示を無視してJSON以外を返し解析に失敗するモデルがあったため。
 
-    `strict` を使うには全プロパティが `required` で、`additionalProperties` が
-    false である必要がある。Pydantic の出力はこれを満たさないので補正する。
+    Pydantic の出力をそのまま渡してはならない。アップストリームごとに要求が違い、
+    実測では次の 400 が返った（**リトライでは解決しないため検品が丸ごと落ちる**）。
+
+    - Anthropic 系: `object` に `additionalProperties: false` が無いと拒否する
+    - Gemini 系: `$defs` / `$ref` を解釈できず「Unknown name "$defs"」で拒否する
+      （`ImageValidationResult` のように入れ子のモデルを持つスキーマで発生する）
+
+    どちらの制約も満たす形へ `_normalize_schema()` で正規化する。
     """
     raw = schema.model_json_schema()
+    defs = raw.pop("$defs", {})
     return {
         "type": "json_schema",
         "json_schema": {
             "name": schema.__name__,
             "strict": False,
-            "schema": raw,
+            "schema": _normalize_schema(raw, defs),
         },
     }
+
+
+def _normalize_schema(node: Any, defs: dict[str, Any]) -> Any:
+    """`$ref` を実体へ展開し、オブジェクトに `additionalProperties: false` を明示する。
+
+    このプロジェクトのレスポンススキーマに再帰的な定義は無い前提（あれば展開が止まらない）。
+    """
+    if isinstance(node, list):
+        return [_normalize_schema(item, defs) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        target = defs.get(ref.removeprefix("#/$defs/"), {})
+        # 参照側に付いている説明などを実体へ重ねる
+        merged = {**target, **{key: value for key, value in node.items() if key != "$ref"}}
+        return _normalize_schema(merged, defs)
+
+    normalized = {
+        key: _normalize_schema(value, defs) for key, value in node.items() if key != "$defs"
+    }
+    if normalized.get("type") == "object" or "properties" in normalized:
+        normalized.setdefault("additionalProperties", False)
+    return normalized
 
 
 def _user_content(user_prompt: str, images: list[ImageInput] | None) -> Any:

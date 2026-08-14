@@ -154,8 +154,9 @@ LOCAL_STORAGE_DIR=./.storage   # local バックエンド時の保存先
 ORCA_API_BASE_URL=https://api.orcarouter.ai/v1
 ORCA_API_KEY=
 # model に渡すのは「ルーター名」。モデル名をコードへ直書きしない
-ORCA_ROUTER_LIGHT=orcarouter/auto     # 意図判定・高速処理用
-ORCA_ROUTER_VISION=orcarouter/auto    # 画像解析・高度判定用
+# orcarouter/auto は振り先が毎回変わるため使わない（docs/04-ai-pipeline.md 1.1「ルーター構成」）
+ORCA_ROUTER_LIGHT=openai/gpt-5.4-mini                  # 意図判定・高速処理用
+ORCA_ROUTER_VISION=qwen/qwen3-vl-235b-a22b-instruct    # 画像解析・高度判定用
 ORCA_TIMEOUT_SECONDS=60
 ORCA_MAX_RETRIES=2
 ORCA_STUB_MODE=false           # true、またはORCA_API_KEY未設定でスタブ応答

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
 import { TaskCard } from "@/components/task/TaskCard";
-import { Card, EmptyState, Skeleton } from "@/components/ui";
+import { EmptyState, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { saveSearch } from "@/lib/api/social";

@@ -16,7 +16,10 @@ async def generate(title: str, orca: OrcaClient) -> str:
         response_schema=TaskDescriptionGenerationResult,
         tier="light",
         model_key="task_description",
-        max_tokens=300,
+        # 300 では**推論モデルへ振られたときに reasoning tokens だけで使い切り、本文が空**になる
+        # （実測: orcarouter/auto と gemini 系で 8件中 7〜8件が finish_reason="length"）。
+        # 生成する文は180文字以内なので、800 でも通常の出力量は変わらない
+        max_tokens=800,
         related_type="task_draft",
         recorder=ai_invocation_repo.create_autonomous,
         context={"title": normalized_title},

@@ -41,6 +41,23 @@ os.environ["LOCAL_STORAGE_DIR"] = str(_STORAGE_DIR)
 os.environ["ORCA_STUB_MODE"] = "true"
 os.environ["ORCA_API_KEY"] = ""
 
+# 用途ごとのモデル指定と合議は、**開発者の .env に何が入っていてもテストの期待値が
+# 変わらないように**空へ戻す。実際に指定を入れて運用しているため、これが無いと
+# 「ローカルでだけ落ちるテスト」になる（合議の設定があると1回の審査が3回になる）。
+for _name in (
+    "ORCA_MODEL_TASK_REVIEW",
+    "ORCA_MODEL_IMAGE_VALIDATION",
+    "ORCA_MODEL_MASKING",
+    "ORCA_MODEL_RESULT_SUMMARY",
+    "ORCA_MODEL_TASK_DESCRIPTION",
+    "ORCA_MODEL_THUMBNAIL",
+    "ORCA_REVIEW_JURY",
+    "ORCA_VALIDATION_JURY",
+):
+    os.environ[_name] = ""
+os.environ["ORCA_ROUTER_LIGHT"] = "orcarouter/auto"
+os.environ["ORCA_ROUTER_VISION"] = "orcarouter/auto"
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
