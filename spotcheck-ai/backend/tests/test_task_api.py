@@ -119,7 +119,8 @@ def test_generate_short_description_from_title(
     assert response.json() == {"description": generated}
     assert calls[0]["purpose"] == "task_description_generation"
     assert calls[0]["tier"] == "light"
-    assert calls[0]["max_tokens"] == 300
+    # 300 では推論モデルへ振られたとき reasoning tokens だけで使い切り、本文が空で返る
+    assert calls[0]["max_tokens"] == 800
     assert "駅前の再開発工事の進捗確認" in calls[0]["user_prompt"]
 
 

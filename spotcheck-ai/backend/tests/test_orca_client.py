@@ -17,7 +17,7 @@ from PIL import Image
 
 from app.core.config import get_settings
 from app.core.exceptions import AIServiceError
-from app.schemas.ai import TaskReviewResult
+from app.schemas.ai import ImageValidationResult, TaskReviewResult
 from app.services import orca_client as orca_module
 from app.services.orca_client import (
     MAX_IMAGE_LONG_EDGE,
@@ -322,6 +322,45 @@ async def test_stub_mode_does_not_touch_http(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ----------------------------------------------------------------------
+# response_format のスキーマ
+# ----------------------------------------------------------------------
+def _walk_objects(node: Any) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    if isinstance(node, dict):
+        if node.get("type") == "object" or "properties" in node:
+            found.append(node)
+        for value in node.values():
+            found += _walk_objects(value)
+    elif isinstance(node, list):
+        for item in node:
+            found += _walk_objects(item)
+    return found
+
+
+def test_response_schema_is_accepted_by_every_upstream() -> None:
+    """Pydantic の出力をそのまま渡すと**アップストリームが 400 で拒否する**。
+
+    - Anthropic 系: object に `additionalProperties: false` が無いと拒否する
+    - Gemini 系: `$defs` / `$ref` を解釈できない
+
+    400 はリトライされないため、これを踏むと検品が丸ごと失敗する。
+    入れ子のモデルを持つ `ImageValidationResult` で両方を確かめる。
+    """
+    schema = orca_module._json_schema_format(ImageValidationResult)["json_schema"]["schema"]
+    serialized = json.dumps(schema)
+
+    assert "$ref" not in serialized
+    assert "$defs" not in serialized
+    objects = _walk_objects(schema)
+    assert objects, "オブジェクト定義が見つからない（前提が崩れている）"
+    for obj in objects:
+        assert obj.get("additionalProperties") is False
+
+    # 入れ子（issues の要素）が実体として展開されている
+    issue = schema["properties"]["issues"]["items"]
+    assert "code" in issue["properties"]
+
+
 def test_extract_json_object_handles_nested_and_braces_in_strings() -> None:
     text = '前置き {"a": {"b": "}"}, "c": [1,2]} 後書き'
     assert extract_json_object(text) == {"a": {"b": "}"}, "c": [1, 2]}
