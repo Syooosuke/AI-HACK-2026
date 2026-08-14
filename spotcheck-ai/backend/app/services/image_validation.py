@@ -25,6 +25,18 @@ logger = get_logger(__name__)
 
 JST = ZoneInfo("Asia/Tokyo")
 
+_PERSON_TERMS = ("人物", "人の顔", "顔が", "顔を", "通行人", "人が写")
+_PERSON_REJECTION_TERMS = (
+    "避け",
+    "画面外",
+    "写さない",
+    "写り込",
+    "邪魔",
+    "妨げ",
+    "人物なし",
+    "建物のみ",
+)
+
 
 def _jst_hour(value: datetime) -> int:
     """撮影時刻の「時」を日本時間で返す。"""
@@ -91,4 +103,35 @@ async def validate_image(
     )
     parsed = result.parsed
     assert isinstance(parsed, ImageValidationResult)
+    _ignore_person_only_rejection(parsed, score_threshold=settings.submission_score_threshold)
     return parsed
+
+
+def _ignore_person_only_rejection(
+    result: ImageValidationResult, *, score_threshold: int
+) -> None:
+    """人物の写り込みだけを理由にしたVLMの拒否を無効化する。
+
+    対象自体が無い場合や、人物以外の品質問題が含まれる場合は補正しない。
+    本当に対象が完全に隠れているケースは、プロンプトどおりVLMが
+    「人物を避ける」ではなく対象の視認不能を理由として返す前提で維持する。
+    """
+    if not result.subject_present or not result.issues:
+        return
+    if any(issue.code not in {"OTHER", "OBSTRUCTED"} for issue in result.issues):
+        return
+
+    feedback = " ".join([result.summary, *(issue.message for issue in result.issues)])
+    if not any(term in feedback for term in _PERSON_TERMS):
+        return
+    if not any(term in feedback for term in _PERSON_REJECTION_TERMS):
+        return
+
+    logger.warning(
+        "人物の写り込みだけを理由にした検品拒否を無効化しました",
+        extra={"original_score": result.score, "original_issues": len(result.issues)},
+    )
+    result.framing_ok = True
+    result.issues = []
+    result.score = max(result.score, score_threshold)
+    result.summary = result.observed_scene[:60] or "依頼対象を確認しました。"
