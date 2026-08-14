@@ -306,17 +306,22 @@ class OrcaClient:
         attempts = self._settings.orca_max_retries + 1
         last_error = "AIの呼び出しに失敗しました。"
         budget = max_tokens
+        # 1回目はスキーマを付けずに投げる（速いため）。崩れたら次から強制する
+        schema_enforced = False
 
         for attempt in range(attempts):
-            body = {
+            body: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": TEMPERATURE,
                 "max_tokens": budget,
-                # **JSONの形はプロンプトでお願いせず、APIに強制させる。**
-                # 実測でモデルがJSON以外を返し、解析に失敗する事象を確認したため
-                "response_format": _json_schema_format(response_schema),
             }
+            if schema_enforced:
+                # **スキーマ強制は「解析に失敗したときだけ」使う。**
+                # 常時付けると claude-opus-5 で 6秒 → 58〜78秒 と約10倍に遅くなる一方、
+                # 判定の中身は変わらなかった（実測）。現地で待つワーカーの時間を
+                # 「起きるかもしれない解析失敗」のために毎回犠牲にする価値はない。
+                body["response_format"] = _json_schema_format(response_schema)
             try:
                 response = await self._http().post(CHAT_COMPLETIONS_PATH, json=body)
             except httpx.TimeoutException as exc:
@@ -371,7 +376,9 @@ class OrcaClient:
                     budget = min(MAX_TOKENS_CEILING, budget * 2)
                     continue
 
-                # 直前の出力を見せて、JSONのみを出すよう指示して再試行する（1.1節の4段階目）
+                # 直前の出力を見せて、JSONのみを出すよう指示して再試行する（1.1節の4段階目）。
+                # あわせて次からはスキーマを強制する（遅くなるが、形が崩れるよりはよい）
+                schema_enforced = True
                 messages = [
                     *messages,
                     {"role": "assistant", "content": _content_of(raw) or ""},

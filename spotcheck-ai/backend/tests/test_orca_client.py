@@ -118,11 +118,10 @@ async def test_successful_call_parses_and_reports_upstream_model() -> None:
     assert body["temperature"] == 0.2
     assert body["max_tokens"] == orca_module.DEFAULT_MAX_TOKENS
     assert body["messages"][0]["role"] == "system"
-    # **JSONの形はプロンプト任せにせず、APIに強制させる**（docs/04-ai-pipeline.md 1.1）。
-    # 実測で、指示を無視してJSON以外を返し解析に失敗するモデルがあったため
-    assert body["response_format"]["type"] == "json_schema"
-    assert body["response_format"]["json_schema"]["name"] == "TaskReviewResult"
-    assert "properties" in body["response_format"]["json_schema"]["schema"]
+    # **1回目はスキーマを付けない**（docs/04-ai-pipeline.md 1.1）。
+    # 常時付けると claude-opus-5 で約10倍（6秒→58〜78秒）遅くなる一方、判定は変わらなかった。
+    # 解析に失敗したときだけ次の試行から強制する
+    assert "response_format" not in body
     assert requests[0].url.path.endswith("/chat/completions")
     assert requests[0].headers["authorization"] == "Bearer test-key"
 
@@ -153,9 +152,17 @@ async def test_retries_with_repair_message_when_json_is_broken() -> None:
 
     assert result.parsed.score == 85  # type: ignore[union-attr]
     assert len(requests) == 2
+
+    first = json.loads(requests[0].content)
+    second = json.loads(requests[1].content)
+
+    # 1回目はスキーマを付けない（速さのため）
+    assert "response_format" not in first
     # 2回目のリクエストには修復指示が含まれる
-    messages = json.loads(requests[1].content)["messages"]
-    assert messages[-1]["content"].startswith("直前の出力はJSONとして解析できませんでした")
+    assert second["messages"][-1]["content"].startswith("直前の出力はJSONとして解析できませんでした")
+    # **形が崩れた後はスキーマを強制する。** 遅くなるが、解析できないよりはよい
+    assert second["response_format"]["type"] == "json_schema"
+    assert second["response_format"]["json_schema"]["name"] == "TaskReviewResult"
 
 
 async def test_schema_mismatch_finally_raises() -> None:

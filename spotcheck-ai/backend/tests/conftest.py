@@ -110,6 +110,39 @@ def _database() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_ai_settings() -> Iterator[None]:
+    """AI関連の設定を、開発者の `.env` から切り離す。
+
+    `Settings` は `.env` を読むため、手元で `ORCA_REVIEW_JURY` などを設定していると
+    テストの呼び出し回数が変わり、**環境によって結果が変わるテスト**になってしまう。
+    実際に、合議設定を入れた開発者の手元だけで5件が落ちる事象が起きた。
+
+    冗長化を検証したいテストは、各自 monkeypatch で明示的に設定する。
+    """
+    settings = get_settings()
+    saved = {
+        name: getattr(settings, name)
+        for name in (
+            "orca_review_jury",
+            "orca_validation_jury",
+            "orca_model_task_review",
+            "orca_model_image_validation",
+            "orca_model_masking",
+            "orca_model_result_summary",
+            "orca_model_task_description",
+            "orca_model_thumbnail",
+        )
+    }
+    for name in saved:
+        object.__setattr__(settings, name, "")
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            object.__setattr__(settings, name, value)
+
+
+@pytest.fixture(autouse=True)
 def clean_tables() -> Iterator[None]:
     """各テストの前に全テーブルを空にする。"""
     with get_engine().begin() as conn:
