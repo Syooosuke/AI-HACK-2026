@@ -120,7 +120,7 @@ export default function HomePage() {
           {address ?? (geoDenied ? "渋谷駅周辺（現在地を取得できませんでした）" : "現在地の周辺")}
         </p>
         <Link href={mapHref} className="text-xs font-bold text-worker underline">
-          地図で見る
+          地図から探す
         </Link>
       </div>
 
@@ -169,7 +169,7 @@ export default function HomePage() {
           <Skeleton className="aspect-square" />
         </div>
       ) : tasks.length === 0 ? (
-        <EmptyState message="この範囲に募集中の依頼がありません。範囲を広げるか、別の地名で検索してください。" />
+        <EmptyState message="募集中の依頼がありません。範囲を広げるか、別の地名で検索してください。" />
       ) : (
         <>
           <p className="text-xs text-slate-500">{tasks.length}件</p>
@@ -180,13 +180,6 @@ export default function HomePage() {
           </ul>
         </>
       )}
-
-      <Card className="border-dashed">
-        <p className="text-xs text-slate-500">
-          撮影を依頼したいときは下の「依頼する」から作成できます。保存した検索条件といいねした投稿は
-          「いいね」タブにまとまります。
-        </p>
-      </Card>
     </div>
   );
 }

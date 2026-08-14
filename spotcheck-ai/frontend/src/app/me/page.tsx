@@ -18,8 +18,8 @@ import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { AuthUser, ReceivedWorkerReviews } from "@/types/api";
 
 const LINKS = [
-  { href: "/requests", label: "出した依頼", icon: "📋", hint: "審査状況・結果の確認" },
-  { href: "/jobs", label: "受注した依頼", icon: "📸", hint: "撮影・提出の進行状況" },
+  { href: "/requests", label: "依頼した案件", icon: "📋", hint: "審査状況・結果の確認" },
+  { href: "/jobs", label: "受注した案件", icon: "📸", hint: "撮影・提出の進行状況" },
 ];
 
 /** バックエンドの ALLOWED_IMAGE_TYPES と揃える。 */

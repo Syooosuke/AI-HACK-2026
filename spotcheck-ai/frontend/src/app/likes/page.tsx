@@ -79,7 +79,7 @@ export default function LikesPage() {
             <Skeleton className="aspect-square" />
           </div>
         ) : tasks.length === 0 ? (
-          <EmptyState message="いいねした投稿はまだありません。ホームで気になる依頼のハートをタップすると、ここに集まります。" />
+          <EmptyState message="いいねした投稿はまだありません。" />
         ) : (
           <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-4">
             {tasks.map((task) => (
@@ -99,7 +99,7 @@ export default function LikesPage() {
         {searches === null ? (
           <Skeleton className="h-20" />
         ) : searches.length === 0 ? (
-          <EmptyState message="保存した検索条件はまだありません。ホームで場所と範囲を決めて「条件を保存」を押すと、ここから呼び出せます。" />
+          <EmptyState message="保存した検索条件はまだありません。" />
         ) : (
           <ul className="space-y-2">
             {searches.map((search) => (

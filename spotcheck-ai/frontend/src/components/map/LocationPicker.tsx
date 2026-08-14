@@ -134,7 +134,7 @@ export function LocationPicker({
         )}
 
         <p className="text-xs text-slate-500">
-          検索・地図のタップ・ストリートビューのいずれでもピンを決められます —{" "}
+          検索・マップ・ストリートビューから地点を指定することができます —{" "}
           {formatCoords(value.lat, value.lng)}
         </p>
         {value.address && <p className="text-xs text-slate-600">{value.address}</p>}
