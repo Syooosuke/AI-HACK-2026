@@ -88,7 +88,9 @@ async def test_skips_without_weights(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         masking, "load_models", lambda: _Models(None, None, "重みが配置されていません")
     )
-    orca = install_vlm(monkeypatch, [])
+    settings = get_settings()
+    monkeypatch.setattr(settings, "orca_stub_mode", True)
+    orca = OrcaClient()
     original = base_image()
 
     outcome = await apply_masking(original, orca=orca)
@@ -99,6 +101,37 @@ async def test_skips_without_weights(monkeypatch: pytest.MonkeyPatch) -> None:
     assert outcome.result["face_count"] == 0
     # 画像はそのまま返る（加工しない）
     assert outcome.image == original
+
+
+async def test_uses_vlm_when_yolo_weights_are_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実OrcaRouterが有効なら、YOLOなしでもVLMで顔を検出してぼかす。"""
+    monkeypatch.setattr(
+        masking, "load_models", lambda: _Models(None, None, "重みが配置されていません")
+    )
+    face_box = (20, 20, 80, 80)
+    orca = install_vlm(
+        monkeypatch,
+        [
+            {
+                "kind": "face",
+                "x1": face_box[0] / SIZE[0],
+                "y1": face_box[1] / SIZE[1],
+                "x2": face_box[2] / SIZE[0],
+                "y2": face_box[3] / SIZE[1],
+                "confidence": 0.9,
+            }
+        ],
+    )
+
+    outcome = await apply_masking(base_image(), orca=orca)
+
+    assert outcome.skipped is False
+    assert outcome.result["yolo_skipped"] is True
+    assert outcome.result["face_count"] == 0
+    face = next(region for region in outcome.result["regions"] if region["kind"] == "face")
+    assert face["method"] == "vlm"
+    with Image.open(io.BytesIO(outcome.image)) as masked:
+        assert variance(masked, face_box) < 200
 
 
 async def test_blurs_faces_but_not_persons(monkeypatch: pytest.MonkeyPatch) -> None:

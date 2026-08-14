@@ -113,7 +113,9 @@ async def apply_masking(
     settings = get_settings()
     models = load_models()
 
-    if models.general is None and models.face is None:
+    # スタブでは画像を解析できないため、YOLOも無い場合だけ従来どおりスキップする。
+    # 実OrcaRouterが有効なら、YOLO重みが無くてもVLMの座標検出でマスキングを続行する。
+    if models.general is None and models.face is None and orca.is_stub:
         logger.warning(models.reason or "マスキングをスキップします")
         return MaskingOutcome(
             image=image_bytes,
@@ -196,6 +198,9 @@ async def apply_masking(
         "plate_count": plate_count,
         "processing_ms": _elapsed_ms(started),
     }
+    if models.general is None and models.face is None:
+        result["yolo_skipped"] = True
+        result["yolo_skip_reason"] = models.reason
     if vlm_error:
         result["vlm_error"] = vlm_error
 
