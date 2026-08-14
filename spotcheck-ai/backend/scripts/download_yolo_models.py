@@ -30,8 +30,7 @@ ASSETS = (
     ModelAsset(
         filename="yolov8n-face.pt",
         url=(
-            "https://github.com/lindevs/yolov8-face/releases/download/1.0.1/"
-            "yolov8n-face-lindevs.pt"
+            "https://github.com/lindevs/yolov8-face/releases/download/1.0.1/yolov8n-face-lindevs.pt"
         ),
         sha256="b038ca653b503453a94f6e12d76feca6840b2a97d7a1322b4498c5e922f29832",
     ),

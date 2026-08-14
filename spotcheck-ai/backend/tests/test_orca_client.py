@@ -118,7 +118,11 @@ async def test_successful_call_parses_and_reports_upstream_model() -> None:
     assert body["temperature"] == 0.2
     assert body["max_tokens"] == orca_module.DEFAULT_MAX_TOKENS
     assert body["messages"][0]["role"] == "system"
-    assert "response_format" not in body  # まずは付けずに送る（1.1節）
+    # **JSONの形はプロンプト任せにせず、APIに強制させる**（docs/04-ai-pipeline.md 1.1）。
+    # 実測で、指示を無視してJSON以外を返し解析に失敗するモデルがあったため
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["name"] == "TaskReviewResult"
+    assert "properties" in body["response_format"]["json_schema"]["schema"]
     assert requests[0].url.path.endswith("/chat/completions")
     assert requests[0].headers["authorization"] == "Bearer test-key"
 

@@ -146,14 +146,10 @@ async def apply_masking(
     general_detections = _detect(models.general, image, settings.yolo_confidence_threshold)
 
     # --- 人物（ぼかさない。検出結果のみ記録） --------------------------------
-    person_boxes = [
-        box for box, label in general_detections if label == "person"
-    ]
+    person_boxes = [box for box, label in general_detections if label == "person"]
 
     # --- 車両（プレート探索のヒントとして使う） ------------------------------
-    vehicle_boxes = [
-        box for box, label in general_detections if label in VEHICLE_CLASSES
-    ]
+    vehicle_boxes = [box for box, label in general_detections if label in VEHICLE_CLASSES]
 
     # --- ナンバープレート・表札（VLMへ座標を問い合わせる） --------------------
     plate_count = 0
@@ -230,6 +226,7 @@ async def _ask_privacy_regions(
         response_schema=PrivacyRegionList,
         images=[ImageInput(base64_data=encode_image_for_vlm(image_bytes))],
         tier="vision",
+        model_key="masking",
         max_tokens=COORDINATE_MAX_TOKENS,
         related_type="submission",
         related_id=submission_id,

@@ -48,7 +48,7 @@ def create_autonomous(**kwargs: Any) -> None:
     """独立したトランザクションで記録する。
 
     AI呼び出しが失敗すると業務トランザクションはロールバックされるが、
-    監査ログは残す必要があるため（docs/04-ai-pipeline.md 1.3「全呼び出しについて記録する」）、
+    監査ログは残す必要があるため（docs/04-ai-pipeline.md 1.4「全呼び出しについて記録する」）、
     呼び出し元のセッションとは切り離してコミットする。
     """
     factory = get_session_factory()
