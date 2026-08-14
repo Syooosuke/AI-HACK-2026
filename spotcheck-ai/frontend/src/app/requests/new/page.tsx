@@ -203,9 +203,8 @@ export default function NewTaskPage() {
           <div className="mt-4 border-t border-slate-100 pt-3">
             <p className="mb-1 text-xs font-bold text-slate-500">受注できるワーカーを絞る（任意）</p>
             <p className="mb-2 text-xs text-slate-500">
-              過去に受け取った星評価の平均で絞り込めます。
+              過去に受け取った評価の平均で絞り込めます。
               <span className="font-bold">評価がまだ無いワーカーは対象に含まれます</span>
-              （評価を得る機会がなくなってしまうため）。
             </p>
             <RatingFilter value={minRating} onChange={setMinRating} />
           </div>
