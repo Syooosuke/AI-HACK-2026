@@ -49,7 +49,7 @@ export default function MyRequestsPage() {
       return;
     }
     if (new Date(deadlineAt) < new Date(scheduledAt)) {
-      toast.error("提出期限は撮影希望日時以降を指定してください。");
+      toast.error("期限は撮影希望日時以降を指定してください。");
       return;
     }
 
@@ -145,7 +145,7 @@ export default function MyRequestsPage() {
                     />
                   </label>
                   <label className="text-xs text-slate-600">
-                    <span className="mb-1 block">提出期限</span>
+                    <span className="mb-1 block">期限</span>
                     <input
                       type="datetime-local"
                       value={deadlineAt}

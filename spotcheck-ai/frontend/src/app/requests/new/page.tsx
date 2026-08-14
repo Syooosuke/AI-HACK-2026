@@ -65,7 +65,7 @@ export default function NewTaskPage() {
       found.description = `${DESCRIPTION_MAX}文字以内で入力してください。`;
     }
     if (!scheduledAt) found.scheduledAt = "撮影希望日時を指定してください。";
-    if (!deadlineAt) found.deadlineAt = "提出期限を指定してください。";
+    if (!deadlineAt) found.deadlineAt = "期限を指定してください。";
     // 「今」を選べるようにする。入力欄は分単位のため、選んだ時点ですでに数十秒過去に
     // なっている。サーバー側も同じ幅（15分）を許容している
     if (scheduledAt && new Date(scheduledAt).getTime() < Date.now() - PAST_TOLERANCE_MS) {
@@ -182,7 +182,7 @@ export default function NewTaskPage() {
             className={DATETIME_INPUT_CLASS}
           />
         </Field>
-        <Field label="提出期限" error={errors.deadlineAt}>
+        <Field label="期限" error={errors.deadlineAt}>
           <input
             type="datetime-local"
             value={deadlineAt}
@@ -226,8 +226,7 @@ export default function NewTaskPage() {
         <div className="space-y-2">
           <SectionTitle>5. 依頼タイトル</SectionTitle>
           <p className="text-xs text-slate-500">
-            よくある依頼はタップで入力できます（詳細が空のときは詳細も一緒に入ります）。
-            選択中のチップをもう一度タップすると消えます
+            よくある依頼はボタンから入力可能です。
           </p>
           <PresetChips onPick={applyPresetToTitle} currentValue={title} field="title" />
           <Field label="" error={errors.title}>
@@ -255,7 +254,7 @@ export default function NewTaskPage() {
             </button>
           </div>
           <p className="text-xs text-slate-500">
-            タイトルから短い依頼文を生成できます。生成後も自由に編集できます
+            依頼タイトルからAIで詳細メッセージを提案することができます
           </p>
           <PresetChips
             onPick={applyPresetToDescription}

@@ -96,7 +96,7 @@ export default function TaskProgressPage() {
   const extendDeadline = async () => {
     if (!newDeadlineAt) return;
     if (new Date(newDeadlineAt) <= new Date(task.deadlineAt)) {
-      toast.error("現在の提出期限より後を指定してください。");
+      toast.error("現在の期限より後を指定してください。");
       return;
     }
     setExtending(true);
@@ -104,7 +104,7 @@ export default function TaskProgressPage() {
       const { task: updated } = await extendTaskDeadline(task.id, localInputToIso(newDeadlineAt));
       setTask({ ...task, deadlineAt: updated.deadlineAt });
       setShowDeadlineForm(false);
-      toast.success("提出期限を延長しました。");
+      toast.success("期限を延長しました。");
     } catch (cause) {
       toast.error(toMessage(cause));
     } finally {
@@ -151,7 +151,7 @@ export default function TaskProgressPage() {
             {showDeadlineForm ? (
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-slate-500">
-                  新しい提出期限
+                  新しい期限
                   <input
                     type="datetime-local"
                     value={newDeadlineAt}
@@ -187,7 +187,7 @@ export default function TaskProgressPage() {
                 onClick={openDeadlineForm}
                 className="text-xs font-bold text-client hover:underline"
               >
-                提出期限を延長する
+                期限を延長する
               </button>
             )}
           </div>
