@@ -21,9 +21,6 @@ const LINKS = [
   { href: "/jobs", label: "受注した依頼", icon: "📸", hint: "撮影・提出の進行状況" },
 ];
 
-/** マイページに出す評価の件数。全件は公開プロフィールで見られる。 */
-const REVIEWS_ON_MY_PAGE = 3;
-
 /** バックエンドの ALLOWED_IMAGE_TYPES と揃える。 */
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
 
@@ -33,6 +30,7 @@ export default function MyPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   // undefined=読み込み中 / null=取得失敗
   const [reviews, setReviews] = useState<ReceivedWorkerReviews | null | undefined>(undefined);
 
@@ -41,6 +39,22 @@ export default function MyPage() {
     sync();
     return subscribeSession(sync);
   }, []);
+
+  useEffect(() => {
+    if (!isReviewModalOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsReviewModalOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isReviewModalOpen]);
 
   useEffect(() => {
     // 評価が取れなくてもマイページ自体は表示できるため、失敗しても握りつぶす
@@ -151,78 +165,49 @@ export default function MyPage() {
               <TrustGauge score={user.trustScore} label="信頼度スコア" size="lg" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-slate-700">信頼度スコア</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  <span className="font-bold">AIの検品結果から自動で増減する積み上げ式</span>
-                  のスコアです（50点から始まり、合格で加点・失格で減点）。
-                  人からの評価とは別の指標です。
-                </p>
                 <div className="mt-2">
                   <InfoRow label="完了した依頼" value={`${user.completedTaskCount}件`} />
                 </div>
               </div>
             </div>
+
+            {/* AIの信頼度スコアと、人による評価を同じプロフィール枠で確認できるようにする */}
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <SectionTitle>依頼者からの評価</SectionTitle>
+              {reviews === undefined ? (
+                <Skeleton className="h-16" />
+              ) : reviews === null ? (
+                <p className="text-xs text-slate-500">評価を取得できませんでした。</p>
+              ) : reviews.reviewCount === 0 ? (
+                <p className="text-xs text-slate-500">
+                  まだ評価はありません。撮影が合格すると、依頼者から5段階で評価されます。
+                </p>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl font-bold tabular-nums text-slate-800">
+                      {reviews.averageRating?.toFixed(1) ?? "—"}
+                    </span>
+                    <span className="min-w-0">
+                      <Stars value={reviews.averageRating ?? 0} size="lg" />
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        総評価件数{reviews.reviewCount}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsReviewModalOpen(true)}
+                      className="ml-auto shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                    >
+                      詳細を見る
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </>
         ) : (
           <p className="text-sm text-slate-500">ログイン情報を取得できませんでした。</p>
-        )}
-      </Card>
-
-      {/* 対人評価。信頼度スコア（AIによる自動判定）と対になる指標として並べる */}
-      <Card>
-        <SectionTitle>依頼者からの評価</SectionTitle>
-        {reviews === undefined ? (
-          <Skeleton className="h-16" />
-        ) : reviews === null ? (
-          <p className="text-xs text-slate-500">評価を取得できませんでした。</p>
-        ) : reviews.reviewCount === 0 ? (
-          <p className="text-xs text-slate-500">
-            まだ評価はありません。撮影が合格すると、依頼者から5段階で評価されます。
-          </p>
-        ) : (
-          <>
-            <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold tabular-nums text-slate-800">
-                {reviews.averageRating?.toFixed(1) ?? "—"}
-              </span>
-              <span className="min-w-0">
-                <Stars value={reviews.averageRating ?? 0} size="lg" />
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  {reviews.reviewCount}件の評価の平均（人による5段階評価）
-                </span>
-              </span>
-            </div>
-
-            <ul className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-              {reviews.reviews.slice(0, REVIEWS_ON_MY_PAGE).map((review) => (
-                <li key={review.id} className="text-xs">
-                  <div className="flex items-center gap-2">
-                    <Stars value={review.rating} size="sm" />
-                    <span className="min-w-0 truncate text-slate-500">{review.taskTitle}</span>
-                  </div>
-                  {review.tags.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {review.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600"
-                        >
-                          {REVIEW_TAG_LABELS[tag]}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {review.comment && (
-                    <p className="mt-1 text-slate-600">{review.comment}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-            {reviews.reviews.length > REVIEWS_ON_MY_PAGE && (
-              <p className="mt-2 text-[11px] text-slate-400">
-                最新{REVIEWS_ON_MY_PAGE}件を表示しています（全{reviews.reviewCount}件）
-              </p>
-            )}
-          </>
         )}
       </Card>
 
@@ -255,6 +240,69 @@ export default function MyPage() {
       >
         ログアウト
       </button>
+
+      {isReviewModalOpen && reviews && reviews.reviewCount > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsReviewModalOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="review-modal-title"
+            className="max-h-[85vh] w-full overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-w-lg sm:rounded-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div>
+                <h2 id="review-modal-title" className="text-base font-bold text-slate-800">
+                  依頼者からの評価
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  平均 {reviews.averageRating?.toFixed(1) ?? "—"}・全{reviews.reviewCount}件
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReviewModalOpen(false)}
+                aria-label="評価の詳細を閉じる"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                ×
+              </button>
+            </div>
+
+            <ul className="max-h-[calc(85vh-70px)] space-y-3 overflow-y-auto p-4">
+              {reviews.reviews.map((review) => (
+                <li key={review.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Stars value={review.rating} size="sm" />
+                    <span className="min-w-0 truncate font-bold text-slate-600">
+                      {review.taskTitle}
+                    </span>
+                  </div>
+                  {review.tags.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {review.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                        >
+                          {REVIEW_TAG_LABELS[tag]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {review.comment && (
+                    <p className="mt-2 leading-relaxed text-slate-600">{review.comment}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
