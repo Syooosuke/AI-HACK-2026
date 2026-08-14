@@ -237,40 +237,48 @@ export default function WorkerTaskDetailPage() {
               icon={<span>⭐</span>}
             />
           )}
-          {task.owner && (
-            <InfoRow
-              label="依頼主"
-              value={
-                // 受注前に「どんな依頼者か」を確かめられるよう、公開プロフィールへ遷移させる
-                <Link
-                  href={`/users/${task.owner.id}`}
-                  className="flex items-center justify-end gap-2 hover:opacity-80"
-                >
-                  <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="xs" />
-                  <span className="flex flex-col items-end">
-                    <span className="max-w-[7rem] truncate font-medium text-client">
-                      {task.owner.displayName}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      {task.owner.completionRate == null
-                        ? "依頼実績なし"
-                        : `完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件`}
-                    </span>
-                  </span>
-                  <TrustBar score={task.owner.trustScore} label="依頼主の信頼度スコア" />
-                  <span aria-hidden className="text-slate-300">
-                    ›
-                  </span>
-                </Link>
-              }
-              icon={<span>🧑‍💼</span>}
-            />
-          )}
           <InfoRow
             label="閲覧・いいね"
             value={`${task.viewCount}回 / ${task.likeCount}件`}
             icon={<span>👀</span>}
           />
+          {task.owner && (
+            /*
+              依頼主だけは InfoRow に載せない。名前・実績・信頼度バーを右半分へ
+              押し込むと幅が足りず、「依頼10件」が途中で折り返れてバーも潰れる。
+              受注前に「どんな依頼者か」を確かめられるよう、公開プロフィールへ遷移させる
+            */
+            <div className="mt-2 border-t border-slate-100 pt-3">
+              <p className="mb-1.5 flex items-center gap-2 text-sm text-slate-500">
+                <span aria-hidden>🧑‍💼</span>
+                依頼主
+              </p>
+              <Link
+                href={`/users/${task.owner.id}`}
+                className="flex items-center gap-3 hover:opacity-80"
+              >
+                <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-client">
+                    {task.owner.displayName}
+                  </span>
+                  <span className="block text-[11px] text-slate-500">
+                    {task.owner.completionRate == null
+                      ? "依頼実績なし"
+                      : `完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件`}
+                  </span>
+                  <TrustBar
+                    score={task.owner.trustScore}
+                    label="依頼主の信頼度スコア"
+                    className="mt-1"
+                  />
+                </span>
+                <span aria-hidden className="text-slate-300">
+                  ›
+                </span>
+              </Link>
+            </div>
+          )}
         </Card>
         <p className="text-center text-[10px] text-slate-400">
           所要時間は徒歩80m/分で概算した目安です

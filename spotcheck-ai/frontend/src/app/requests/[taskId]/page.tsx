@@ -8,12 +8,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { PollingIndicator } from "@/components/task/PollingIndicator";
 import { StatusTimeline } from "@/components/task/StatusTimeline";
+import { TimeWindow } from "@/components/task/TimeWindow";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { cancelTask, extendTaskDeadline, getTask } from "@/lib/api/tasks";
-import { formatDateTime, formatRemaining, isoToLocalInput, localInputToIso } from "@/lib/datetime";
+import { isoToLocalInput, localInputToIso } from "@/lib/datetime";
 import { formatCoords } from "@/lib/geo";
 import type { TaskDetail } from "@/types/api";
 
@@ -124,10 +125,14 @@ export default function TaskProgressPage() {
         （要約は審査結果画面と、ワーカー向けの依頼詳細では引き続き使う）
       */}
 
+      {/*
+        撮影の時間帯は依頼者側でも「幅」で見せる。ワーカー向けと同じ図にしておくと、
+        依頼者が指定した幅がそのまま相手にどう見えているかが分かる
+      */}
+      <TimeWindow from={task.scheduledAt} to={task.deadlineAt} audience="client" showRemaining />
+
       <Card>
         <InfoRow label="撮影地点" value={task.locationAddress ?? formatCoords(task.locationLat, task.locationLng)} icon={<span>📍</span>} />
-        <InfoRow label="撮影希望日時" value={formatDateTime(task.scheduledAt)} icon={<span>🕒</span>} />
-        <InfoRow label="提出期限" value={`${formatDateTime(task.deadlineAt)}（${formatRemaining(task.deadlineAt)}）`} icon={<span>⏳</span>} />
         <InfoRow label="報酬" value={`¥${task.rewardAmount.toLocaleString()} / 人`} icon={<span>💰</span>} />
         <InfoRow
           label="受注状況"

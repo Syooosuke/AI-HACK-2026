@@ -29,21 +29,38 @@ function WavyLine({ className = "" }: { className?: string }) {
   );
 }
 
+/** 見出しと補足の文言。誰に向けた画面かで言い回しを変える。 */
+const WORDING = {
+  worker: {
+    title: "撮影してほしい時間帯",
+    caption: "この幅のなかで撮影してください。",
+  },
+  client: {
+    title: "撮影してもらう時間帯",
+    caption: "この幅のなかで撮影されます。",
+  },
+} as const;
+
 export function TimeWindow({
   from,
   to,
   /** 期限までの残り時間を添えるか（ワーカー向けの画面で使う） */
   showRemaining = false,
+  /** 文言の向き先。既定はワーカー向け */
+  audience = "worker",
 }: {
   from: string;
   to: string;
   showRemaining?: boolean;
+  audience?: keyof typeof WORDING;
 }) {
+  const wording = WORDING[audience];
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
       <p className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-500">
         <span aria-hidden>🕒</span>
-        撮影してほしい時間帯
+        {wording.title}
       </p>
 
       <div className="flex items-center gap-2">
@@ -59,7 +76,7 @@ export function TimeWindow({
       </div>
 
       <p className="mt-2 text-[11px] text-slate-500">
-        この幅のなかで撮影してください。
+        {wording.caption}
         {showRemaining && <span className="ml-1 font-bold text-slate-600">{formatRemaining(to)}</span>}
       </p>
     </div>
