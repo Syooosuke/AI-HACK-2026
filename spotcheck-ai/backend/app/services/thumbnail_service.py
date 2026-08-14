@@ -16,7 +16,7 @@ import io
 import uuid
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -66,9 +66,15 @@ class _SceneDescription(BaseModel):
 # 画像加工
 # ----------------------------------------------------------------------
 def to_square_jpeg(data: bytes, *, size: int) -> bytes:
-    """中央を正方形に切り抜き、指定サイズのJPEGへ変換する。"""
+    """中央を正方形に切り抜き、指定サイズのJPEGへ変換する。
+
+    **EXIF の回転情報を先に適用する。** スマホの写真は「センサーの向きのまま保存し、
+    Orientation タグで回転を指示する」形式が多く、これを無視すると撮影時に見えていた
+    向きと保存後の向きが食い違う（横倒し・上下逆に見える）。
+    """
     with Image.open(io.BytesIO(data)) as image:
-        rgb = image.convert("RGB")
+        upright = ImageOps.exif_transpose(image) or image
+        rgb = upright.convert("RGB")
         edge = min(rgb.size)
         left = (rgb.width - edge) // 2
         top = (rgb.height - edge) // 2

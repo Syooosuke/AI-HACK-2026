@@ -113,6 +113,7 @@ async def build_cards(
                 location_address=task.location_address,
                 remaining_slots=remaining,
                 required_worker_count=task.required_worker_count,
+                min_worker_rating=task.min_worker_rating,
                 status=task.status,
                 created_at=task.created_at,
                 thumbnail_url=url,

@@ -154,6 +154,170 @@ QRコードを作り直すときは `./backend/.venv/bin/python deploy/make_qr.p
 
 ---
 
+## 内部構造（コードの地図）
+
+**どのファイルを触ればいいか**を最初に掴むための図。`dev` ブランチの現状に対応しています。
+
+### バックエンドの層構造
+
+**上から下へ一方向にしか呼びません。** 下の層が上の層を呼ぶことはありません。
+
+```mermaid
+flowchart TB
+    subgraph L1["① ルーター層 app/api/routes/"]
+        direction LR
+        r1["auth<br/>ログイン・登録"]
+        r2["tasks<br/>依頼・受注"]
+        r3["submissions<br/>提出・検品結果"]
+        r4["social<br/>いいね・保存検索"]
+        r5["users<br/>プロフィール・評価"]
+        r6["notifications<br/>お知らせ"]
+        r7["files<br/>画像配信"]
+    end
+
+    subgraph L2["② サービス層 app/services/ — 業務ロジックはすべてここ"]
+        direction LR
+        s1["task_service<br/>task_review"]
+        s2["submission_service<br/>submission_pipeline"]
+        s3["auth_service<br/>user_service"]
+        s4["social_service<br/>notification_service"]
+        s5["worker_review_service<br/>thumbnail_service"]
+    end
+
+    subgraph L3["③ 外部アダプタ — 差し替え可能にしてある"]
+        direction LR
+        a1["orca_client<br/>LLM・VLM"]
+        a2["masking<br/>YOLO ローカル推論"]
+        a3["uploads<br/>Storage"]
+        a4["streetview<br/>Maps"]
+    end
+
+    subgraph L4["④ リポジトリ層 app/repositories/ — DBアクセスはここだけ"]
+        direction LR
+        p1["task_repo / assignment_repo"]
+        p2["submission_repo / user_repo"]
+        p3["like_repo / saved_search_repo"]
+        p4["notification_repo / worker_review_repo"]
+    end
+
+    L0["app/models/ — SQLAlchemy モデル（11テーブル）"]
+    DB[("PostgreSQL")]
+    JOB["app/jobs/expire_tasks<br/>APScheduler で定期実行<br/>期限切れの依頼を閉じる"]
+
+    L1 --> L2
+    L2 --> L3
+    L2 --> L4
+    L4 --> L0
+    L0 --> DB
+    JOB --> L2
+```
+
+| 層 | 役割 | やってはいけないこと |
+|---|---|---|
+| ① ルーター | HTTPの入出力だけ。認証済みユーザーを受け取り、サービスへ渡す | 業務判断を書く／DBを直接触る |
+| ② サービス | 業務ロジックと権限判定（依頼のオーナーか受注者か） | SQLを直接書く |
+| ③ 外部アダプタ | AI・ストレージ・地図との通信を閉じ込める | 呼び出し側にレスポンス形式を漏らす |
+| ④ リポジトリ | DBアクセスの集約 | 業務判断を書く |
+
+> **AI呼び出しは必ず `orca_client` 経由**にしています。OrcaRouter の仕様が変わっても、
+> 直すのは `orca_client.py` の中だけで済むようにするためです（`CLAUDE.md` D-04）。
+
+### 依頼のステータス遷移
+
+```mermaid
+stateDiagram-v2
+    [*] --> screening: 依頼を作成
+    screening --> rejected: AI審査で却下<br/>（犯罪目的・撮影禁止）
+    screening --> needs_info: 情報が不足
+    screening --> open: 公開
+    needs_info --> screening: 依頼者が補足して再申請
+    open --> in_progress: 1人目が受注
+    open --> cancelled: 依頼者が取り消し
+    in_progress --> completed: 合格者が指定人数に達した
+    in_progress --> open: 受注者が0人に戻った<br/>（辞退・再撮影の上限超過）
+    open --> expired: 期限切れ<br/>（合格0件）
+    in_progress --> expired: 期限切れ<br/>（合格0件）
+    in_progress --> completed: 期限切れだが<br/>合格が1件以上ある
+    rejected --> [*]
+    completed --> [*]
+    expired --> [*]
+    cancelled --> [*]
+```
+
+| 遷移 | どこで起きるか |
+|---|---|
+| `screening` の分岐 | `task_review.review_task` — AIの意図解析＋十分性スコアリング |
+| `open` → `in_progress` | `task_service.accept_task` — **1人目の受注で切り替わる**（定員を待たない） |
+| `in_progress` → `open` | `task_service.reopen_if_slot_available` — 有効な受注が0件になり、かつ期限内のとき |
+| `in_progress` → `completed` | `submission_pipeline` — 合格者数が `required_worker_count` に達したとき |
+| 期限切れの処理 | `jobs/expire_tasks` — **合格が1件でもあれば `completed`**、0件なら `expired` |
+| 取り消し | `task_service.cancel_task` — `screening` / `needs_info` / `open` のときだけ可能 |
+
+### 画像検品パイプライン（提出1件あたり）
+
+`submission_pipeline.run_validation` が `BackgroundTasks` で走ります。
+**APIは即座に `202 Accepted` を返し、フロントは結果をポーリング**します。
+
+```mermaid
+flowchart TB
+    up["画像＋位置＋撮影時刻を同時送信<br/>（EXIFは補助的な検証材料）"]
+    c1["1. 位置・時刻の決定論チェック<br/>距離・時間帯・EXIF整合"]
+    c2["2. VLM検品<br/>依頼条件を満たすか"]
+    c3["3. 環境整合<br/>昼夜が撮影時刻と合うか"]
+    sc["4. reality_score を算出"]
+    jd{"5. 合否判定"}
+
+    ok["6. マスキング（YOLO）<br/>顔・ナンバープレート"]
+    st["加工済みを配信用バケットへ<br/>原本は非公開のまま残す"]
+    pay["決済スタブを記録<br/>charge / payout"]
+    sum["合格画像から調査結果を要約"]
+
+    ng{"再撮影の回数は?"}
+    re["再撮影を指示<br/>（1ワーカーあたり上限2回）"]
+    cancel["受注をキャンセルし<br/>枠を他の人へ再開放"]
+
+    up --> c1 --> c2 --> c3 --> sc --> jd
+    jd -->|合格| ok --> st --> pay --> sum
+    jd -->|不合格| ng
+    ng -->|2回まで| re
+    ng -->|超過| cancel
+```
+
+**検品と報酬はワーカー単位**です。合格した人から順に納品・報酬確定し、全員の完了を待ちません。
+
+### フロントエンドの画面構成
+
+ログイン後は**全ユーザー共通**の画面です。ロールはありません。
+
+```mermaid
+flowchart TB
+    login["/login・/signup"] --> guard["AuthGuard<br/>JWT を localStorage で保持"]
+    guard --> shell["AppShell<br/>モバイル: 下部タブ / PC: 左サイドバー"]
+
+    shell --> t1["ホーム /home<br/>地図と投稿カード・検索"]
+    shell --> t2["いいね /likes<br/>いいねした依頼・保存した検索"]
+    shell --> t3["依頼する /requests/new<br/>地図＋ストリートビューで地点指定"]
+    shell --> t4["お知らせ /notifications"]
+    shell --> t5["マイページ /me<br/>プロフィール・受け取った評価"]
+
+    t1 --> d1["/jobs/:taskId<br/>依頼の詳細・受注"]
+    d1 --> d2["/jobs/:taskId/capture<br/>アプリ内カメラ"]
+    d2 --> d3["/jobs/:taskId/status<br/>検品結果をポーリング"]
+    t3 --> n1["/requests/new/review<br/>AI審査の結果"]
+    n1 --> n2["/requests/:taskId<br/>自分の依頼の進捗"]
+    n2 --> n3["/requests/:taskId/results<br/>納品された写真"]
+```
+
+| 場所 | 役割 |
+|---|---|
+| `src/app/` | 画面。状態を持つものだけ `"use client"` |
+| `src/components/` | `layout` `task` `map` `capture` `auth` `ui` に分かれる |
+| `src/lib/api/` | **API呼び出しはここに集約**。コンポーネントから `fetch` を直接書かない |
+| `src/lib/polling.ts` | 検品結果の段階的バックオフ（2秒→5秒→15秒→30秒、上限15分） |
+| `src/types/api.ts` | バックエンドのスキーマに対応する型 |
+
+---
+
 ## 費用が出ないようにしている設定
 
 デモURLを共有すると、アクセス数に応じて課金される可能性があります。以下を入れて上限を作っています。

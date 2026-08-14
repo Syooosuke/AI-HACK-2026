@@ -22,6 +22,17 @@ const DESCRIPTION_MIN = 10;
 const DESCRIPTION_MAX = 1000;
 const TITLE_MAX = 60;
 
+/** サーバー側の SCHEDULE_PAST_TOLERANCE と揃える。 */
+const PAST_TOLERANCE_MS = 15 * 60 * 1000;
+
+/**
+ * `datetime-local` はブラウザ既定の最小幅を持つため、`w-full` だけだと
+ * 親からはみ出す（iOS Safari で顕著）。`min-w-0` で縮めるようにし、
+ * `appearance-none` で端末ごとの余計な装飾を外す。
+ */
+const DATETIME_INPUT_CLASS =
+  "block w-full min-w-0 max-w-full appearance-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800";
+
 export default function NewTaskPage() {
   const router = useRouter();
   const toast = useToast();
@@ -33,9 +44,11 @@ export default function NewTaskPage() {
     lng: env.defaultMapCenter.lng,
     address: null,
   });
-  const [scheduledAt, setScheduledAt] = useState(() => isoToLocalInput(minutesFromNow(60)));
+  // 既定は「今から」。すぐ撮ってほしい依頼が最も多く、毎回入力し直す手間を省く
+  const [scheduledAt, setScheduledAt] = useState(() => isoToLocalInput(new Date()));
   const [deadlineAt, setDeadlineAt] = useState(() => isoToLocalInput(minutesFromNow(60 * 6)));
   const [workerCount, setWorkerCount] = useState(1);
+  const [minRating, setMinRating] = useState<number | null>(null);
   const [reward, setReward] = useState(2000);
   const [images, setImages] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -53,8 +66,10 @@ export default function NewTaskPage() {
     }
     if (!scheduledAt) found.scheduledAt = "撮影希望日時を指定してください。";
     if (!deadlineAt) found.deadlineAt = "提出期限を指定してください。";
-    if (scheduledAt && new Date(scheduledAt).getTime() <= Date.now()) {
-      found.scheduledAt = "現在時刻より後を指定してください。";
+    // 「今」を選べるようにする。入力欄は分単位のため、選んだ時点ですでに数十秒過去に
+    // なっている。サーバー側も同じ幅（15分）を許容している
+    if (scheduledAt && new Date(scheduledAt).getTime() < Date.now() - PAST_TOLERANCE_MS) {
+      found.scheduledAt = "過去の日時は指定できません。";
     }
     if (scheduledAt && deadlineAt && new Date(deadlineAt) < new Date(scheduledAt)) {
       found.deadlineAt = "撮影希望日時以降を指定してください。";
@@ -128,6 +143,7 @@ export default function NewTaskPage() {
         deadlineAt: localInputToIso(deadlineAt),
         rewardAmount: reward,
         requiredWorkerCount: workerCount,
+        minWorkerRating: minRating,
         referenceImages: images,
       });
       saveReview(review);
@@ -163,7 +179,7 @@ export default function NewTaskPage() {
             type="datetime-local"
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+            className={DATETIME_INPUT_CLASS}
           />
         </Field>
         <Field label="提出期限" error={errors.deadlineAt}>
@@ -171,7 +187,7 @@ export default function NewTaskPage() {
             type="datetime-local"
             value={deadlineAt}
             onChange={(e) => setDeadlineAt(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+            className={DATETIME_INPUT_CLASS}
           />
         </Field>
       </Card>
@@ -182,6 +198,16 @@ export default function NewTaskPage() {
           <div className="flex items-center gap-4">
             <Stepper value={workerCount} min={1} max={10} onChange={setWorkerCount} />
             <p className="text-xs text-slate-500">同じ地点を最大10人まで依頼できます</p>
+          </div>
+
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <p className="mb-1 text-xs font-bold text-slate-500">受注できるワーカーを絞る（任意）</p>
+            <p className="mb-2 text-xs text-slate-500">
+              過去に受け取った星評価の平均で絞り込めます。
+              <span className="font-bold">評価がまだ無いワーカーは対象に含まれます</span>
+              （評価を得る機会がなくなってしまうため）。
+            </p>
+            <RatingFilter value={minRating} onChange={setMinRating} />
           </div>
         </div>
         <Field label="4. 報酬（1人あたり・円）" error={errors.reward}>
@@ -323,6 +349,45 @@ function Field({
       {children}
       {error && <span className="mt-1 block text-xs text-fail">{error}</span>}
     </label>
+  );
+}
+
+/** 受注できるワーカーの最低平均評価。「指定なし」を含めた選択肢から選ぶ。 */
+function RatingFilter({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (next: number | null) => void;
+}) {
+  const options: { label: string; value: number | null }[] = [
+    { label: "指定なし", value: null },
+    { label: "★3.0以上", value: 3.0 },
+    { label: "★3.5以上", value: 3.5 },
+    { label: "★4.0以上", value: 4.0 },
+    { label: "★4.5以上", value: 4.5 },
+  ];
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.label}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+              active
+                ? "border-client bg-client text-white"
+                : "border-slate-300 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

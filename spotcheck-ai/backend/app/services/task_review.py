@@ -19,7 +19,7 @@ from app.prompts.task_review import SYSTEM_PROMPT, build_user_prompt
 from app.repositories import ai_invocation_repo
 from app.schemas.ai import TaskReviewResult
 from app.schemas.task import ReviewChecks, ReviewResult
-from app.services import notification_service
+from app.services import content_filter, notification_service
 from app.services.orca_client import ImageInput, OrcaClient, encode_image_for_vlm
 
 logger = get_logger(__name__)
@@ -75,6 +75,21 @@ async def _load_reference_images(
     return images
 
 
+def _blocked_result(filtered: content_filter.FilterResult) -> TaskReviewResult:
+    """決定論フィルタで弾いた依頼を、AIの判定結果と同じ形に整える。"""
+    return TaskReviewResult(
+        decision="rejected",
+        score=0,
+        safety="fail",
+        validity="pass",
+        risk="pass",
+        duplication="pass",
+        rejection_reason=filtered.reason,
+        missing_info=[],
+        summary="安全性の基準を満たさないため却下しました。",
+    )
+
+
 async def review_task(
     session: Session,
     task: Task,
@@ -84,6 +99,22 @@ async def review_task(
     """依頼を審査し、tasks の審査結果カラムと status を更新する。"""
     settings = get_settings()
     has_reference_images = bool(task.reference_images)
+
+    # **AIより先に決定論のフィルタを通す。** スタブモードではLLMを呼ばないため、
+    # ここを通さないと明らかに黒い依頼まで素通りしてしまう。
+    filtered = content_filter.screen(task.title, task.description)
+    if filtered.blocked:
+        logger.warning(
+            "依頼を安全フィルタで却下しました",
+            extra={"task_id": str(task.id), "matched": list(filtered.matched)},
+        )
+        return _finalize(
+            session,
+            task=task,
+            result=_blocked_result(filtered),
+            decision="rejected",
+            is_stub=orca.is_stub,
+        )
     # スタブモードでは画像を送らないため、無駄なダウンロードを避ける
     images = await _load_reference_images(task, storage, skip=orca.is_stub)
 
@@ -104,6 +135,23 @@ async def review_task(
     assert isinstance(result, TaskReviewResult)
 
     decision = decide(result, score_threshold=settings.task_review_score_threshold)
+    return _finalize(
+        session, task=task, result=result, decision=decision, is_stub=orca_result.is_stub
+    )
+
+
+def _finalize(
+    session: Session,
+    *,
+    task: Task,
+    result: TaskReviewResult,
+    decision: str,
+    is_stub: bool,
+) -> ReviewOutcome:
+    """審査結果を tasks へ書き戻し、通知を出して戻り値を組み立てる。
+
+    AIの判定と決定論フィルタの却下で、保存する形をそろえるために切り出している。
+    """
     status = DECISION_TO_STATUS[decision]
 
     task.status = status
@@ -128,7 +176,7 @@ async def review_task(
             "task_id": str(task.id),
             "decision": decision,
             "score": result.score,
-            "is_stub": orca_result.is_stub,
+            "is_stub": is_stub,
         },
     )
 

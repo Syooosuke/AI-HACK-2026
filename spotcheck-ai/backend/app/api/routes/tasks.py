@@ -62,6 +62,9 @@ async def create_task(
     reward_amount: Annotated[int, Form(alias="rewardAmount", ge=100, le=100000)],
     required_worker_count: Annotated[int, Form(alias="requiredWorkerCount", ge=1, le=10)],
     location_address: Annotated[str | None, Form(alias="locationAddress")] = None,
+    min_worker_rating: Annotated[
+        float | None, Form(alias="minWorkerRating", ge=1.0, le=5.0)
+    ] = None,
     reference_images: Annotated[list[UploadFile] | None, File(alias="referenceImages")] = None,
 ) -> TaskReviewResponse:
     """依頼作成＋AI審査。審査は同期実行し、その結果をそのまま返す（画面①→②）。"""
@@ -78,6 +81,7 @@ async def create_task(
             deadline_at=deadline_at,
             reward_amount=reward_amount,
             required_worker_count=required_worker_count,
+            min_worker_rating=min_worker_rating,
         ),
         reference_images=[f for f in (reference_images or []) if f.filename],
         storage=get_storage(),

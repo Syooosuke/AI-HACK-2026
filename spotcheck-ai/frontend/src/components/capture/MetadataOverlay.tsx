@@ -24,13 +24,17 @@ export function GpsBadge({ ready, accuracyM }: { ready: boolean; accuracyM: numb
   );
 }
 
+/**
+ * 撮影時刻の焼き込み表示。
+ *
+ * 位置は置く側（CameraView の上部スタック）が決める。ここで absolute に置くと、
+ * 同じ位置に出る他の帯（前回の指摘・カメラのエラー）と重なる。
+ */
 export function TimestampOverlay({ now }: { now: Date }) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-16 flex justify-center">
-      <span className="rounded-lg bg-black/50 px-3 py-1 font-mono text-sm text-white">
-        {now.toLocaleDateString("ja-JP")} {formatTime(now)}
-      </span>
-    </div>
+    <span className="rounded-lg bg-black/50 px-3 py-1 font-mono text-sm text-white">
+      {now.toLocaleDateString("ja-JP")} {formatTime(now)}
+    </span>
   );
 }
 

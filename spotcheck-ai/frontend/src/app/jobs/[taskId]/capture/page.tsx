@@ -9,7 +9,7 @@ import { CameraView, type CaptureResult } from "@/components/capture/CameraView"
 import { Button, Card, Spinner } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { createSubmission } from "@/lib/api/submissions";
+import { createSubmission, getSubmission } from "@/lib/api/submissions";
 import { getTask } from "@/lib/api/tasks";
 import type { MyAssignment } from "@/types/api";
 
@@ -19,11 +19,26 @@ export default function CapturePage() {
   const toast = useToast();
   const [assignment, setAssignment] = useState<MyAssignment | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
+  const [retakeIssues, setRetakeIssues] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
       const task = await getTask(taskId);
       setAssignment(task.myAssignment);
+
+      // 再撮影で戻ってきたときは、何を直せばよいかをカメラの上に出す。
+      // お知らせの「再撮影が必要です」からここへ直接来るため、指示が無いと
+      // 何を直すか分からないまま同じ写真を撮ってしまう
+      const previous = task.myAssignment;
+      if (previous && previous.retakeCount > 0 && previous.latestSubmissionId) {
+        try {
+          const submission = await getSubmission(previous.latestSubmissionId);
+          setRetakeIssues(submission.issues.map((issue) => issue.message));
+        } catch {
+          // 指示が取れなくても撮影はできる。ここで撮影を止める理由はない
+          setRetakeIssues([]);
+        }
+      }
     } catch (cause) {
       setAssignment(null);
       toast.error(toMessage(cause));
@@ -91,6 +106,7 @@ export default function CapturePage() {
     <CameraView
       submitting={submitting}
       attemptLabel={`${assignment.retakeCount + 1}回目 / 残り再撮影${assignment.remainingRetakes}回`}
+      retakeIssues={retakeIssues}
       onClose={() => router.replace(`/jobs/${taskId}`)}
       onSubmit={(result) => void submit(result)}
     />

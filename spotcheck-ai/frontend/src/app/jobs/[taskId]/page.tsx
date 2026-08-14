@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { StreetViewPanel } from "@/components/map/StreetViewPanel";
 import { CornerBadge } from "@/components/task/CornerBadge";
+import { TimeWindow } from "@/components/task/TimeWindow";
 import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { Avatar } from "@/components/ui/Avatar";
 import { AssignmentBadge } from "@/components/ui/StatusBadge";
@@ -20,7 +21,6 @@ import { ApiError, resolveApiUrl } from "@/lib/api/client";
 import { likeTask, unlikeTask } from "@/lib/api/social";
 import { toMessage } from "@/lib/api/errorMessages";
 import { acceptTask, getTask, withdrawAssignment } from "@/lib/api/tasks";
-import { formatDateTime, formatRemaining } from "@/lib/datetime";
 import { formatCoords, formatDistanceWithWalk } from "@/lib/geo";
 import type { TaskDetail } from "@/types/api";
 
@@ -50,8 +50,11 @@ export default function WorkerTaskDetailPage() {
     setAccepting(true);
     try {
       await acceptTask(taskId);
-      toast.success("この依頼を受注しました。撮影に進んでください。");
-      router.push(`/jobs/${taskId}/capture`);
+      // カメラへ直行させず、この詳細ページに留まる。撮影条件・参考画像・
+      // ストリートビューを確認してから「撮影に進む」を押せるようにするため
+      toast.success("この依頼を受注しました。内容を確認して撮影に進んでください。");
+      await load();
+      setAccepting(false);
     } catch (cause) {
       toast.error(toMessage(cause));
       if (cause instanceof ApiError && cause.code === "TASK_FULL") {
@@ -197,6 +200,8 @@ export default function WorkerTaskDetailPage() {
           <StreetViewPanel position={{ lat: task.locationLat, lng: task.locationLng }} />
         </Card>
 
+        <TimeWindow from={task.scheduledAt} to={task.deadlineAt} showRemaining />
+
         <Card>
           <InfoRow
             label="現地までの距離"
@@ -216,16 +221,6 @@ export default function WorkerTaskDetailPage() {
             icon={<span>📍</span>}
           />
           <InfoRow
-            label="撮影希望日時"
-            value={formatDateTime(task.scheduledAt)}
-            icon={<span>🕒</span>}
-          />
-          <InfoRow
-            label="提出期限"
-            value={`${formatDateTime(task.deadlineAt)}（${formatRemaining(task.deadlineAt)}）`}
-            icon={<span>⏳</span>}
-          />
-          <InfoRow
             label="報酬"
             value={`¥${task.rewardAmount.toLocaleString()}`}
             icon={<span>💰</span>}
@@ -235,33 +230,11 @@ export default function WorkerTaskDetailPage() {
             value={`${task.remainingSlots}枠`}
             icon={<span>👥</span>}
           />
-          {task.owner && (
+          {task.minWorkerRating != null && (
             <InfoRow
-              label="依頼主"
-              value={
-                // 受注前に「どんな依頼者か」を確かめられるよう、公開プロフィールへ遷移させる
-                <Link
-                  href={`/users/${task.owner.id}`}
-                  className="flex items-center justify-end gap-2 hover:opacity-80"
-                >
-                  <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="xs" />
-                  <span className="flex flex-col items-end">
-                    <span className="max-w-[7rem] truncate font-medium text-client">
-                      {task.owner.displayName}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      {task.owner.completionRate == null
-                        ? "依頼実績なし"
-                        : `完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件`}
-                    </span>
-                  </span>
-                  <TrustBar score={task.owner.trustScore} label="依頼主の信頼度スコア" />
-                  <span aria-hidden className="text-slate-300">
-                    ›
-                  </span>
-                </Link>
-              }
-              icon={<span>🧑‍💼</span>}
+              label="受注条件"
+              value={`平均評価 ★${task.minWorkerRating.toFixed(1)} 以上`}
+              icon={<span>⭐</span>}
             />
           )}
           <InfoRow
@@ -269,6 +242,43 @@ export default function WorkerTaskDetailPage() {
             value={`${task.viewCount}回 / ${task.likeCount}件`}
             icon={<span>👀</span>}
           />
+          {task.owner && (
+            /*
+              依頼主だけは InfoRow に載せない。名前・実績・信頼度バーを右半分へ
+              押し込むと幅が足りず、「依頼10件」が途中で折り返れてバーも潰れる。
+              受注前に「どんな依頼者か」を確かめられるよう、公開プロフィールへ遷移させる
+            */
+            <div className="mt-2 border-t border-slate-100 pt-3">
+              <p className="mb-1.5 flex items-center gap-2 text-sm text-slate-500">
+                <span aria-hidden>🧑‍💼</span>
+                依頼主
+              </p>
+              <Link
+                href={`/users/${task.owner.id}`}
+                className="flex items-center gap-3 hover:opacity-80"
+              >
+                <Avatar name={task.owner.displayName} src={task.owner.avatarUrl} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-client">
+                    {task.owner.displayName}
+                  </span>
+                  <span className="block text-[11px] text-slate-500">
+                    {task.owner.completionRate == null
+                      ? "依頼実績なし"
+                      : `完了率 ${Math.round(task.owner.completionRate * 100)}%・依頼${task.owner.publishedTaskCount}件`}
+                  </span>
+                  <TrustBar
+                    score={task.owner.trustScore}
+                    label="依頼主の信頼度スコア"
+                    className="mt-1"
+                  />
+                </span>
+                <span aria-hidden className="text-slate-300">
+                  ›
+                </span>
+              </Link>
+            </div>
+          )}
         </Card>
         <p className="text-center text-[10px] text-slate-400">
           所要時間は徒歩80m/分で概算した目安です

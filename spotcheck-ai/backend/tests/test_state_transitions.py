@@ -177,7 +177,9 @@ def test_retake_loop_first_reject_then_approve(
     assert first.ai_score == 45
     assert assignment.status is AssignmentStatus.ACCEPTED
     assert assignment.retake_count == 1
-    assert [issue["code"] for issue in first.ai_feedback["issues"]] == ["TOO_DARK"]
+    # 不合格の理由は時間帯に依存しないものにしている。「暗すぎます」を使うと、
+    # 画像を見ていないスタブが夜間の撮影で毎回それを返してしまうため
+    assert [issue["code"] for issue in first.ai_feedback["issues"]] == ["ANGLE_MISMATCH"]
 
     second = _submit_and_validate(session, task=task, assignment=assignment, worker=users["worker"])
     assert second.ai_validation_status is ValidationStatus.APPROVED

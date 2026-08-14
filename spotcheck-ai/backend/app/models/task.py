@@ -35,6 +35,10 @@ class Task(Base):
         CheckConstraint(
             "required_worker_count BETWEEN 1 AND 10", name="ck_tasks_required_worker_count"
         ),
+        CheckConstraint(
+            "min_worker_rating IS NULL OR (min_worker_rating >= 1.0 AND min_worker_rating <= 5.0)",
+            name="ck_tasks_min_worker_rating",
+        ),
         Index("idx_tasks_status_deadline", "status", "deadline_at"),
         Index("idx_tasks_location", "location_lat", "location_lng"),
         Index("idx_tasks_client", "client_id", text("created_at DESC")),
@@ -60,6 +64,9 @@ class Task(Base):
     approved_worker_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    #: 受注できるワーカーの最低平均評価（1.0〜5.0）。None なら誰でも受注できる。
+    #: 評価がまだ無いワーカーは足切りしない（新規が永久に受注できなくなるため）。
+    min_worker_rating: Mapped[float | None] = mapped_column(Float)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="task_status", values_callable=lambda e: [m.value for m in e]),
         nullable=False,

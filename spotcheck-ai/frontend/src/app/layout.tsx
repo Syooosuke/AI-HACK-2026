@@ -19,8 +19,15 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "SpotCheck AI",
-  description: "現地撮影代行プラットフォーム SpotCheck AI",
+  title: "SpotCheck",
+  description: "現地撮影代行プラットフォーム SpotCheck",
+  icons: {
+    icon: [
+      { url: "/favicon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
