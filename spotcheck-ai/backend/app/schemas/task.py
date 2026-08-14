@@ -57,6 +57,7 @@ class TaskSummary(CamelModel):
     deadline_at: datetime
     reward_amount: int
     required_worker_count: int
+    min_worker_rating: float | None = None
 
 
 class TaskReviewResponse(CamelModel):
@@ -164,6 +165,8 @@ class TaskDetail(CamelModel):
     required_worker_count: int
     approved_worker_count: int
     remaining_slots: int
+    #: 依頼者が指定した「受注できるワーカーの最低平均評価」。未指定なら None
+    min_worker_rating: float | None = None
     status: TaskStatus
     review_summary: str | None = None
     reference_images: list[ReferenceImage] = Field(default_factory=list)
@@ -198,6 +201,7 @@ class NearbyTask(CamelModel):
     location_address: str | None = None
     remaining_slots: int
     required_worker_count: int
+    min_worker_rating: float | None = None
     status: TaskStatus
     created_at: datetime
     #: 正方形サムネイルの配信URL。生成前・取得失敗時は None

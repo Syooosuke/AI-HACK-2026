@@ -2,7 +2,8 @@
 
 /**
  * 近傍タスクのマーカー表示（画面④の地図タブ）。
- * 現在地を青丸、タスクを緑ピンで表示し、タップで下部カードを出す。
+ * 現在地を青丸、タスクをピンで表示し、タップで下部カードを出す。
+ * ピンの色は投稿カードのタグ（SOLD/HOT/NEW）と対応させる。
  * APIキー未設定時はリスト表示への案内にフォールバックする。
  */
 
@@ -10,7 +11,30 @@ import { useEffect, useRef } from "react";
 
 import { MAPS_AUTH_ERROR_MESSAGE, useGoogleMaps } from "@/components/map/useGoogleMaps";
 import type { GMap, GMarker } from "@/types/google-maps";
-import type { NearbyTask } from "@/types/api";
+import type { NearbyTask, TaskBadge } from "@/types/api";
+
+/**
+ * ピンの形（SVGパス）。原点が先端で、そこから上へ膨らむ雫形。
+ * `anchor` を (0,0) にすることで、先端がちょうど座標を指す。
+ */
+const PIN_PATH =
+  "M 0 0 C -3 -6 -10 -10 -10 -17 a 10 10 0 1 1 20 0 C 10 -10 3 -6 0 0 z M 0 -17 m -4 0 a 4 4 0 1 0 8 0 a 4 4 0 1 0 -8 0";
+
+/** タグの色（CornerBadge と同じ考え方: sold > hot > new）。 */
+const BADGE_COLOR: Record<TaskBadge, string> = {
+  sold: "#1E293B", // slate-800
+  hot: "#EF4444", // fail
+  new: "#059669", // worker
+};
+
+/** タグが無い依頼は、募集中を表す既定色（依頼の青）にする。 */
+const DEFAULT_COLOR = "#2563EB";
+
+function markerColor(badges: TaskBadge[]): string {
+  // 並び順はサーバー側（task_card.py）で優先度順になっている
+  const badge = badges[0];
+  return badge ? BADGE_COLOR[badge] : DEFAULT_COLOR;
+}
 
 export function TaskMarkers({
   center,
@@ -63,14 +87,20 @@ export function TaskMarkers({
         position: { lat: task.locationLat, lng: task.locationLng },
         map: mapRef.current!,
         title: task.title,
+        // ピン形状にし、色はカードのタグ（SOLD/HOT/NEW）と揃える。
+        // 一覧と地図で同じ依頼が同じ色になり、見比べられるようにするため
         icon: {
-          path: 0,
-          scale: 9,
-          fillColor: "#059669",
+          path: PIN_PATH,
+          fillColor: markerColor(task.badges),
           fillOpacity: 1,
           strokeColor: "#ffffff",
-          strokeWeight: 2,
+          strokeWeight: 1.5,
+          scale: 1.6,
+          // パスの原点は先端。先端が座標に刺さるようにする
+          anchor: new maps.Point(0, 0),
         },
+        // 取引終了は目立たせない（募集中の依頼を優先して見せる）
+        zIndex: task.badges.includes("sold") ? 1 : 2,
       });
       marker.addListener("click", () => onSelectRef.current(task));
       return marker;

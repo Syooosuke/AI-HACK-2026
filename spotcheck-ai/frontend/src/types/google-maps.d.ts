@@ -16,6 +16,12 @@ export interface GLatLng {
   lng(): number;
 }
 
+/** `google.maps.Point`。中身は使わないので目印だけ持たせる。 */
+export interface GPoint {
+  x: number;
+  y: number;
+}
+
 export interface GMarker {
   setPosition(position: LatLngLiteral): void;
   setMap(map: GMap | null): void;
@@ -147,7 +153,11 @@ export interface GMapsNamespace {
     map: GMap;
     title?: string;
     icon?: unknown;
+    /** 大きい値ほど手前に描かれる。取引終了の依頼を奥に置くために使う */
+    zIndex?: number;
   }) => GMarker;
+  /** アイコンの原点（anchor）を指定するために使う。 */
+  Point: new (x: number, y: number) => GPoint;
   Geocoder: new () => {
     geocode(
       request: { location?: LatLngLiteral; address?: string; language?: string; region?: string },

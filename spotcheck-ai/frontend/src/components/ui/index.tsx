@@ -83,12 +83,16 @@ export function InfoRow({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5 text-sm">
-      <span className="flex items-center gap-2 text-slate-500">
+    <div className="flex items-start justify-between gap-3 py-1.5 text-sm">
+      {/*
+        ラベルは縮めない（shrink-0）。値が長いとラベル側が潰され、
+        「撮影地点」のような短い語が1文字ずつ折り返されて縦書きに見えてしまう
+      */}
+      <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-slate-500">
         {icon}
         {label}
       </span>
-      <span className="text-right font-medium text-slate-800">{value}</span>
+      <span className="min-w-0 break-words text-right font-medium text-slate-800">{value}</span>
     </div>
   );
 }

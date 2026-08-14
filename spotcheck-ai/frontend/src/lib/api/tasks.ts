@@ -20,6 +20,8 @@ export type CreateTaskInput = {
   deadlineAt: string;
   rewardAmount: number;
   requiredWorkerCount: number;
+  /** 受注できるワーカーの最低平均評価。null なら条件なし */
+  minWorkerRating?: number | null;
   referenceImages: File[];
 };
 
@@ -42,6 +44,10 @@ export function createTask(input: CreateTaskInput): Promise<TaskReviewResponse> 
   form.set("deadlineAt", input.deadlineAt);
   form.set("rewardAmount", String(input.rewardAmount));
   form.set("requiredWorkerCount", String(input.requiredWorkerCount));
+  // 未指定のときは項目ごと送らない（空文字だと数値として解釈できず422になる）
+  if (input.minWorkerRating != null) {
+    form.set("minWorkerRating", String(input.minWorkerRating));
+  }
   input.referenceImages.forEach((file) => form.append("referenceImages", file));
   return apiFetch<TaskReviewResponse>("/api/tasks", { method: "POST", body: form });
 }

@@ -3,7 +3,7 @@
 /** 画面③ 依頼公開・進行状況（docs/05-frontend.md 画面③）。10秒ごとにポーリングする。 */
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { PollingIndicator } from "@/components/task/PollingIndicator";
@@ -12,7 +12,7 @@ import { Button, Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { extendTaskDeadline, getTask } from "@/lib/api/tasks";
+import { cancelTask, extendTaskDeadline, getTask } from "@/lib/api/tasks";
 import { formatDateTime, formatRemaining, isoToLocalInput, localInputToIso } from "@/lib/datetime";
 import { formatCoords } from "@/lib/geo";
 import type { TaskDetail } from "@/types/api";
@@ -21,12 +21,14 @@ const POLL_INTERVAL_MS = 10_000;
 
 export default function TaskProgressPage() {
   const { taskId } = useParams<{ taskId: string }>();
+  const router = useRouter();
   const toast = useToast();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [failed, setFailed] = useState(false);
   const [showDeadlineForm, setShowDeadlineForm] = useState(false);
   const [newDeadlineAt, setNewDeadlineAt] = useState("");
   const [extending, setExtending] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -59,11 +61,35 @@ export default function TaskProgressPage() {
 
   const hasResults = task.approvedWorkerCount > 0 || task.status === "completed";
   const canExtendDeadline = task.status === "open" || task.status === "in_progress";
+  // バックエンドの CANCELLABLE_STATUSES と揃える。受注が入った時点で in_progress になり、
+  // 取り下げはできなくなる（撮影に向かっているワーカーがいるため）
+  const canCancel =
+    task.status === "screening" || task.status === "needs_info" || task.status === "open";
 
   const openDeadlineForm = () => {
     const defaultDeadline = new Date(new Date(task.deadlineAt).getTime() + 24 * 60 * 60 * 1000);
     setNewDeadlineAt(isoToLocalInput(defaultDeadline));
     setShowDeadlineForm(true);
+  };
+
+  const cancel = async () => {
+    if (
+      !window.confirm(
+        "この依頼の募集を取り下げますか？取り下げると元に戻せません（同じ内容で作り直すことはできます）。",
+      )
+    ) {
+      return;
+    }
+    setCancelling(true);
+    try {
+      await cancelTask(task.id);
+      toast.success("募集を取り下げました。");
+      router.push("/requests");
+    } catch (cause) {
+      toast.error(toMessage(cause));
+      setCancelling(false);
+      void load();
+    }
   };
 
   const extendDeadline = async () => {
@@ -92,12 +118,11 @@ export default function TaskProgressPage() {
         <StatusBadge status={task.status} />
       </div>
 
-      {task.reviewSummary && (
-        <Card className="bg-violet-50/60">
-          <SectionTitle>AIによる依頼内容の要約</SectionTitle>
-          <p className="text-sm text-slate-700">{task.reviewSummary}</p>
-        </Card>
-      )}
+      {/*
+        AIによる「依頼内容の要約」はここには出さない。
+        自分が書いた依頼を要約して見せられても、依頼者にとっては情報が増えない。
+        （要約は審査結果画面と、ワーカー向けの依頼詳細では引き続き使う）
+      */}
 
       <Card>
         <InfoRow label="撮影地点" value={task.locationAddress ?? formatCoords(task.locationLat, task.locationLng)} icon={<span>📍</span>} />
@@ -173,6 +198,21 @@ export default function TaskProgressPage() {
         <Link href={`/requests/${task.id}/results`}>
           <Button accent="client">結果を見る</Button>
         </Link>
+      )}
+
+      {/*
+        募集の取り下げ。**受注が入る前に限る**（受注後に取り下げられると、
+        現地へ向かっているワーカーの労力が無駄になるため）。
+      */}
+      {canCancel && (
+        <div className="space-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <p className="text-xs text-slate-500">
+            まだ誰も受注していないため、この依頼は取り下げられます。取り下げると元に戻せません。
+          </p>
+          <Button accent="neutral" onClick={() => void cancel()} loading={cancelling}>
+            募集を取り下げる
+          </Button>
+        </div>
       )}
 
       <PollingIndicator label="10秒ごとに進行状況を更新しています" stopped={failed} />

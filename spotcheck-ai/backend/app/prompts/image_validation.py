@@ -24,7 +24,15 @@ SYSTEM_PROMPT = """あなたは現地撮影代行プラットフォーム「Spot
 対象が全く写っていない場合、score は40点を超えてはいけません。
 軽微な不備（若干のピンボケ、やや暗い、構図のずれなど）があっても、依頼内容が確認できれば減点は最小限にとどめてください。
 
+【明るさの判定 brightness_ok】**絶対的な明るさではなく、申告された撮影時刻に照らして判断してください。**
+夜間・薄暮の撮影で画面が暗いのは当然であり、それ自体は不備ではありません。
+街灯や照明で対象の形・状態が判別できるなら brightness_ok は true にしてください。
+false にしてよいのは、白飛び・黒つぶれで**対象が何であるか判別できない**場合に限ります。
+「夜だから暗い」という理由で TOO_DARK を付けてはいけません。
+
 【issues】致命的な不合格要素がある場合のみ、指定されたコードと、ワーカーが次に何をすべきかが分かる日本語の短い指示（30文字以内）を記述してください。軽微な問題は許容し、空配列にしてください。
+指示は「暗すぎます」のような状態の説明ではなく、**次に何をすれば合格するか**が分かる具体的な行動を書いてください。
+（悪い例:「暗すぎます」／良い例:「街灯の下に寄り、対象を明るく写してください」）
 使用できるコードは次のみです: SUBJECT_MISSING / TOO_DARK / TOO_BLURRY / ANGLE_MISMATCH / TOO_FAR / OBSTRUCTED / OTHER
 
 【observed_scene】画像に実際に写っているものを、依頼内容に引きずられず客観的に記述してください（60文字以内）。
@@ -66,7 +74,9 @@ def build_user_prompt(task: Task, submission: Submission, *, has_reference: bool
     return f"""【依頼内容】{task.description}
 【撮影条件】{task.title}
 【撮影地点の住所】{task.location_address or "（住所の登録なし）"}
+【依頼者が希望した撮影日時】{_jst(task.scheduled_at)}（日本時間）
 【申告された撮影時刻】{_jst(submission.captured_at)}（日本時間）
+【撮影時の時間帯】{_period_of_day(submission.captured_at)}
 【参考画像の有無】{"あり" if has_reference else "なし"}
 【提出回数】{submission.attempt_no}回目
 
@@ -78,3 +88,16 @@ def build_user_prompt(task: Task, submission: Submission, *, has_reference: bool
 def _jst(value: datetime) -> str:
     aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     return aware.astimezone(JST).strftime("%Y-%m-%d %H:%M")
+
+
+def _period_of_day(value: datetime) -> str:
+    """時間帯を言葉で添える。「夜だから暗い」を不備と誤判定させないための材料。"""
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    hour = aware.astimezone(JST).hour
+    if 7 <= hour < 16:
+        return "日中（明るいことが期待される）"
+    if 16 <= hour < 19:
+        return "夕方（薄暗いことが自然）"
+    if 5 <= hour < 7:
+        return "早朝（薄暗いことが自然）"
+    return "夜間（暗いことが自然。照明で対象が判別できれば問題ない）"

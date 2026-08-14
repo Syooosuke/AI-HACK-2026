@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -22,7 +22,14 @@ from app.models import (
     User,
 )
 from app.models.task import MAX_REFERENCE_IMAGES
-from app.repositories import assignment_repo, like_repo, submission_repo, task_repo, user_repo
+from app.repositories import (
+    assignment_repo,
+    like_repo,
+    submission_repo,
+    task_repo,
+    user_repo,
+    worker_review_repo,
+)
 from app.schemas.task import (
     AssignmentDetail,
     MyAssignment,
@@ -53,6 +60,9 @@ CANCELLABLE_STATUSES = (TaskStatus.SCREENING, TaskStatus.NEEDS_INFO, TaskStatus.
 #: 依頼者が提出期限を延長できる status。終了済みの依頼は変更しない。
 DEADLINE_EXTENDABLE_STATUSES = (TaskStatus.OPEN, TaskStatus.IN_PROGRESS)
 
+#: 撮影希望日時として許す「過去」の幅。「今から撮ってほしい」依頼を通すために設ける。
+SCHEDULE_PAST_TOLERANCE = timedelta(minutes=15)
+
 
 @dataclass
 class TaskCreateInput:
@@ -65,6 +75,8 @@ class TaskCreateInput:
     deadline_at: datetime
     reward_amount: int
     required_worker_count: int
+    #: 受注できるワーカーの最低平均評価（1.0〜5.0）。None なら条件なし
+    min_worker_rating: float | None = None
 
 
 # ----------------------------------------------------------------------
@@ -97,6 +109,7 @@ async def create_task(
         deadline_at=data.deadline_at,
         reward_amount=data.reward_amount,
         required_worker_count=data.required_worker_count,
+        min_worker_rating=data.min_worker_rating,
         status=TaskStatus.SCREENING,
     )
     task_repo.create(session, task)
@@ -170,6 +183,7 @@ async def duplicate_task(
         deadline_at=payload.deadline_at,
         reward_amount=source.reward_amount,
         required_worker_count=source.required_worker_count,
+        min_worker_rating=source.min_worker_rating,
         status=TaskStatus.SCREENING,
     )
     task_repo.create(session, duplicate)
@@ -210,19 +224,29 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
     if task.deadline_at <= datetime.now(UTC):
         raise Conflict("この依頼は期限を過ぎています。", code="INVALID_STATE")
 
-    # 4. 同一ワーカーの重複受注
+    # 4. 依頼者が指定した評価条件（任意）
+    _ensure_rating_requirement(session, task=task, worker=worker)
+
+    # 5. 同一ワーカーの重複受注。ただし**辞退済みなら受け直せる**
     existing = assignment_repo.get_by_task_and_worker(session, task_id=task_id, worker_id=worker.id)
     if existing is not None:
         if existing.status in (AssignmentStatus.ACCEPTED, AssignmentStatus.SUBMITTED):
             raise Conflict("すでにこの依頼を受注しています。", code="ALREADY_ACCEPTED")
-        raise Conflict("この依頼はすでに完了または失格となっています。", code="ALREADY_ACCEPTED")
+        if existing.status is not AssignmentStatus.CANCELLED:
+            raise Conflict(
+                "この依頼はすでに完了または失格となっています。", code="ALREADY_ACCEPTED"
+            )
 
-    # 5. 空き枠の確認
+    # 6. 空き枠の確認
     if assignment_repo.count_active(session, task_id) >= task.required_worker_count:
         raise Conflict("受注枠がすでに埋まっています。", code="TASK_FULL")
 
-    # 6. 受注を作成し、依頼を進行中にする
-    assignment = assignment_repo.create(session, task_id=task_id, worker_id=worker.id)
+    # 7. 受注を作成（辞退済みなら再開）し、依頼を進行中にする
+    assignment = (
+        assignment_repo.reactivate(session, existing)
+        if existing is not None
+        else assignment_repo.create(session, task_id=task_id, worker_id=worker.id)
+    )
     task.status = TaskStatus.IN_PROGRESS
     session.flush()
 
@@ -245,6 +269,25 @@ def accept_task(session: Session, *, worker: User, task_id: uuid.UUID) -> Assign
         retake_count=assignment.retake_count,
         remaining_retakes=settings.max_retake_count - assignment.retake_count,
     )
+
+
+def _ensure_rating_requirement(session: Session, *, task: Task, worker: User) -> None:
+    """依頼者が指定した「最低平均評価」を満たすか確かめる。
+
+    **評価がまだ1件も無いワーカーは通す。** 足切りすると、評価を得る機会が無い新規が
+    永久に受注できなくなり、条件付き依頼が誰にも受けられなくなるため。
+    """
+    if task.min_worker_rating is None:
+        return
+    stats = worker_review_repo.stats_for_worker(session, worker.id)
+    if stats.average is None:
+        return
+    if stats.average < task.min_worker_rating:
+        raise Forbidden(
+            f"この依頼は平均評価{task.min_worker_rating:.1f}以上のワーカーが対象です。"
+            f"（あなたの平均評価は{stats.average:.1f}です）",
+            code="RATING_REQUIREMENT_NOT_MET",
+        )
 
 
 def withdraw_assignment(session: Session, *, worker: User, task_id: uuid.UUID) -> AssignmentDetail:
@@ -525,6 +568,7 @@ async def build_task_detail(
         required_worker_count=task.required_worker_count,
         approved_worker_count=task.approved_worker_count,
         remaining_slots=max(0, task.required_worker_count - active_count),
+        min_worker_rating=task.min_worker_rating,
         status=task.status,
         review_summary=task.review_summary,
         reference_images=reference_images,
@@ -608,7 +652,9 @@ def _validate_schedule(
     scheduled_at: datetime, deadline_at: datetime, *, require_future: bool = True
 ) -> None:
     now = datetime.now(UTC)
-    if require_future and scheduled_at <= now:
+    # 「今すぐ撮ってほしい」を許すため、少しの過去は通す。入力欄は分単位で、
+    # 画面を開いてから送信するまでの数分で「現在時刻」が過去になってしまうため。
+    if require_future and scheduled_at < now - SCHEDULE_PAST_TOLERANCE:
         raise ValidationError(
             "撮影希望日時は現在時刻より後を指定してください。",
             details={"field": "scheduledAt"},
@@ -644,6 +690,7 @@ def _to_summary(task: Task) -> TaskSummary:
         deadline_at=task.deadline_at,
         reward_amount=task.reward_amount,
         required_worker_count=task.required_worker_count,
+        min_worker_rating=task.min_worker_rating,
     )
 
 

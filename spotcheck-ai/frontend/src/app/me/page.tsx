@@ -6,19 +6,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { Card, InfoRow, Skeleton } from "@/components/ui";
+import { Card, InfoRow, SectionTitle, Skeleton } from "@/components/ui";
 import { Avatar } from "@/components/ui/Avatar";
+import { REVIEW_TAG_LABELS, Stars } from "@/components/ui/Stars";
 import { TrustGauge } from "@/components/ui/TrustGauge";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { deleteAvatar, uploadAvatar } from "@/lib/api/users";
+import { deleteAvatar, getMyReceivedReviews, uploadAvatar } from "@/lib/api/users";
 import { clearSession, getCurrentUser, saveUser, subscribeSession } from "@/lib/session";
-import type { AuthUser } from "@/types/api";
+import type { AuthUser, ReceivedWorkerReviews } from "@/types/api";
 
 const LINKS = [
   { href: "/requests", label: "出した依頼", icon: "📋", hint: "審査状況・結果の確認" },
   { href: "/jobs", label: "受注した依頼", icon: "📸", hint: "撮影・提出の進行状況" },
 ];
+
+/** マイページに出す評価の件数。全件は公開プロフィールで見られる。 */
+const REVIEWS_ON_MY_PAGE = 3;
 
 /** バックエンドの ALLOWED_IMAGE_TYPES と揃える。 */
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
@@ -29,11 +33,20 @@ export default function MyPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  // undefined=読み込み中 / null=取得失敗
+  const [reviews, setReviews] = useState<ReceivedWorkerReviews | null | undefined>(undefined);
 
   useEffect(() => {
     const sync = () => setUser(getCurrentUser());
     sync();
     return subscribeSession(sync);
+  }, []);
+
+  useEffect(() => {
+    // 評価が取れなくてもマイページ自体は表示できるため、失敗しても握りつぶす
+    getMyReceivedReviews()
+      .then(setReviews)
+      .catch(() => setReviews(null));
   }, []);
 
   const logout = () => {
@@ -139,7 +152,9 @@ export default function MyPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-slate-700">信頼度スコア</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  検品に合格すると上がり、再撮影の上限を超えると下がります。
+                  <span className="font-bold">AIの検品結果から自動で増減する積み上げ式</span>
+                  のスコアです（50点から始まり、合格で加点・失格で減点）。
+                  人からの評価とは別の指標です。
                 </p>
                 <div className="mt-2">
                   <InfoRow label="完了した依頼" value={`${user.completedTaskCount}件`} />
@@ -149,6 +164,65 @@ export default function MyPage() {
           </>
         ) : (
           <p className="text-sm text-slate-500">ログイン情報を取得できませんでした。</p>
+        )}
+      </Card>
+
+      {/* 対人評価。信頼度スコア（AIによる自動判定）と対になる指標として並べる */}
+      <Card>
+        <SectionTitle>依頼者からの評価</SectionTitle>
+        {reviews === undefined ? (
+          <Skeleton className="h-16" />
+        ) : reviews === null ? (
+          <p className="text-xs text-slate-500">評価を取得できませんでした。</p>
+        ) : reviews.reviewCount === 0 ? (
+          <p className="text-xs text-slate-500">
+            まだ評価はありません。撮影が合格すると、依頼者から5段階で評価されます。
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl font-bold tabular-nums text-slate-800">
+                {reviews.averageRating?.toFixed(1) ?? "—"}
+              </span>
+              <span className="min-w-0">
+                <Stars value={reviews.averageRating ?? 0} size="lg" />
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  {reviews.reviewCount}件の評価の平均（人による5段階評価）
+                </span>
+              </span>
+            </div>
+
+            <ul className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+              {reviews.reviews.slice(0, REVIEWS_ON_MY_PAGE).map((review) => (
+                <li key={review.id} className="text-xs">
+                  <div className="flex items-center gap-2">
+                    <Stars value={review.rating} size="sm" />
+                    <span className="min-w-0 truncate text-slate-500">{review.taskTitle}</span>
+                  </div>
+                  {review.tags.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {review.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                        >
+                          {REVIEW_TAG_LABELS[tag]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {review.comment && (
+                    <p className="mt-1 text-slate-600">{review.comment}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {reviews.reviews.length > REVIEWS_ON_MY_PAGE && (
+              <p className="mt-2 text-[11px] text-slate-400">
+                最新{REVIEWS_ON_MY_PAGE}件を表示しています（全{reviews.reviewCount}件）
+              </p>
+            )}
+          </>
         )}
       </Card>
 
