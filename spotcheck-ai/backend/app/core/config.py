@@ -115,7 +115,10 @@ class Settings(BaseSettings):
 
     # --- 判定パラメータ ---
     task_review_score_threshold: int = 70
-    submission_score_threshold: int = 70
+    # 現地で1枚撮るだけのワーカーが達成できる水準にする（docs/04-ai-pipeline.md 3.1）。
+    # 対象が写っていて状態が読み取れれば70点以上が出る採点基準なので、
+    # 構図や明るさの粗さで数点落ちても合格が残るよう60を下限にする
+    submission_score_threshold: int = 60
     max_retake_count: int = 2
     location_tolerance_meters: float = 100.0
     timestamp_tolerance_seconds: int = 300

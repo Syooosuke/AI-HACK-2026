@@ -165,7 +165,39 @@ async def validate_image(
     parsed = result.parsed
     assert isinstance(parsed, ImageValidationResult)
     _ignore_person_only_rejection(parsed, score_threshold=settings.submission_score_threshold)
+    _repair_contradictory_score(parsed, score_threshold=settings.submission_score_threshold)
     return parsed
+
+
+def _repair_contradictory_score(result: ImageValidationResult, *, score_threshold: int) -> None:
+    """本文が欠けたまま低いスコアだけを返す、退化した応答を補正する。
+
+    実測で、`subject_present` も3つの品質フラグもすべて true、`issues` も空、
+    そして **`observed_scene` と `summary` が空のまま** `score` が 0 という応答を確認した
+    （本来11個あるキーが8個しか無い、途中で打ち切られたような出力）。
+    プロンプトの採点基準に照らせばこの状態は70点以上になるはずで、判定ではなく**出力の事故**である。
+
+    そのまま不合格にすると、問題の無い写真で再撮影を要求したうえに上限（2回）を1つ消費する。
+    判断材料が「合格」しか無いのだから合格側に倒す。
+
+    **低いスコアそのものを疑ってはいけない。** モデルが所見（`observed_scene` / `summary`）を
+    書いたうえで低く付けたのなら、それは根拠のある判定なので尊重する。
+    ここで拾うのは所見ごと欠落しているものだけに限る。
+    """
+    if not result.subject_present or result.issues:
+        return
+    if not (result.framing_ok and result.sharpness_ok and result.brightness_ok):
+        return
+    if result.observed_scene.strip() or result.summary.strip():
+        return
+    if result.score >= score_threshold:
+        return
+
+    logger.warning(
+        "所見が空のまま低スコアだった応答を補正しました",
+        extra={"original_score": result.score, "threshold": score_threshold},
+    )
+    result.score = score_threshold
 
 
 def _ignore_person_only_rejection(result: ImageValidationResult, *, score_threshold: int) -> None:

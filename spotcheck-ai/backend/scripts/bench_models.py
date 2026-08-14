@@ -30,7 +30,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
-from PIL import Image, ImageDraw, ImageEnhance
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 from app.core.config import get_settings
 from app.prompts import image_validation as iv
@@ -74,8 +74,12 @@ class Case:
     #: 期待する被写体の有無と合否
     subject_present: bool
     should_pass: bool
-    #: 画像を暗くするか（夜間撮影の再現）
-    darken: bool = False
+    #: 画像に掛ける加工（`TRANSFORMS` のキー）。現地での撮影の粗さを再現する
+    transform: str = ""
+
+    @property
+    def image_key(self) -> str:
+        return f"{self.image_name}:{self.transform}"
 
 
 def _placeholder(text: str) -> Image.Image:
@@ -85,11 +89,47 @@ def _placeholder(text: str) -> Image.Image:
     return im
 
 
-def load_image(name: str, *, darken: bool) -> str:
+def _off_center(image: Image.Image) -> Image.Image:
+    """対象を画面の隅へ寄せる（ワーカーが構図を整えずに撮った状態）。"""
+    width, height = image.size
+    canvas = Image.new("RGB", (width, height), (235, 235, 235))
+    canvas.paste(image.resize((int(width * 0.6), int(height * 0.6))), (int(width * 0.38), 0))
+    return canvas
+
+
+def _far(image: Image.Image) -> Image.Image:
+    """対象から離れて撮った状態（小さく写る）。"""
+    width, height = image.size
+    canvas = Image.new("RGB", (width, height), (225, 228, 232))
+    small = image.resize((int(width * 0.45), int(height * 0.45)))
+    canvas.paste(small, (int(width * 0.3), int(height * 0.3)))
+    return canvas
+
+
+#: 現地での「粗いが依頼内容は確認できる」写真を作る加工。
+#: **これらを不合格にしてはいけない。** ワーカーは現地で1枚を撮るだけであり、
+#: 構図や明るさの完璧さを求めると、達成できる依頼がほとんど無くなる。
+TRANSFORMS = {
+    "dark": lambda im: ImageEnhance.Brightness(im).enhance(0.3),
+    "very_dark": lambda im: ImageEnhance.Brightness(im).enhance(0.15),
+    "blurry": lambda im: im.filter(ImageFilter.GaussianBlur(radius=2.5)),
+    # 夜間に手持ちで撮ると暗さとブレが同時に出る。**重なると急に判別できなくなる**ため、
+    # 単体の加工とは別に、実際に起こる組み合わせで境界を押さえておく
+    "dark_blurry": lambda im: (
+        ImageEnhance.Brightness(im).enhance(0.4).filter(ImageFilter.GaussianBlur(radius=2.0))
+    ),
+    "tilted": lambda im: im.rotate(12, expand=False, fillcolor=(235, 235, 235)),
+    "off_center": _off_center,
+    "far": _far,
+}
+
+
+def load_image(name: str, *, transform: str = "") -> str:
     path = FIXTURES / name
     image = Image.open(path) if path.exists() else _placeholder(name)
-    if darken:
-        image = ImageEnhance.Brightness(image).enhance(0.3)
+    image = image.convert("RGB")
+    if transform:
+        image = TRANSFORMS[transform](image)
     buffer = io.BytesIO()
     image.convert("RGB").save(buffer, format="JPEG", quality=88)
     return base64.b64encode(buffer.getvalue()).decode()
@@ -129,7 +169,7 @@ CASES = (
         "station.jpg",
         subject_present=True,
         should_pass=True,
-        darken=True,
+        transform="dark",
     ),
     Case(
         "④一致・道路の交通状況",
@@ -148,6 +188,73 @@ CASES = (
         "road.jpg",
         subject_present=False,
         should_pass=False,
+    ),
+    # --- ここから「粗いが依頼内容は確認できる」写真。すべて合格すべき ---
+    Case(
+        "⑥一致・真っ暗に近い夜間",
+        _Task(
+            "駅の改札周辺の様子", "駅の改札周辺の様子が分かるように、通路全体を撮影してください。"
+        ),
+        _Submission(NIGHT),
+        "station.jpg",
+        subject_present=True,
+        should_pass=True,
+        transform="very_dark",
+    ),
+    Case(
+        "⑦一致・手ブレでボケている",
+        _Task(
+            "駅の改札周辺の様子", "駅の改札周辺の様子が分かるように、通路全体を撮影してください。"
+        ),
+        _Submission(NOON),
+        "station.jpg",
+        subject_present=True,
+        should_pass=True,
+        transform="blurry",
+    ),
+    Case(
+        "⑧一致・対象が隅に寄っている",
+        _Task(
+            "道路の交通状況の確認", "車線の混み具合とバスの停車状況が分かるように撮影してください。"
+        ),
+        _Submission(NOON),
+        "road.jpg",
+        subject_present=True,
+        should_pass=True,
+        transform="off_center",
+    ),
+    Case(
+        "⑨一致・傾いている",
+        _Task(
+            "道路の交通状況の確認", "車線の混み具合とバスの停車状況が分かるように撮影してください。"
+        ),
+        _Submission(NOON),
+        "road.jpg",
+        subject_present=True,
+        should_pass=True,
+        transform="tilted",
+    ),
+    Case(
+        "⑩一致・離れていて小さい",
+        _Task(
+            "駅の改札周辺の様子", "駅の改札周辺の様子が分かるように、通路全体を撮影してください。"
+        ),
+        _Submission(NOON),
+        "station.jpg",
+        subject_present=True,
+        should_pass=True,
+        transform="far",
+    ),
+    Case(
+        "⑪一致・夜間で手ブレもある",
+        _Task(
+            "駅の改札周辺の様子", "駅の改札周辺の様子が分かるように、通路全体を撮影してください。"
+        ),
+        _Submission(NIGHT),
+        "station.jpg",
+        subject_present=True,
+        should_pass=True,
+        transform="dark_blurry",
     ),
 )
 
@@ -207,9 +314,7 @@ async def main() -> None:
         raise SystemExit("ORCA_API_KEY が未設定です。実AIを叩くため必須です。")
 
     threshold = settings.submission_score_threshold
-    images = {
-        c.image_name + str(c.darken): load_image(c.image_name, darken=c.darken) for c in CASES
-    }
+    images = {c.image_key: load_image(c.image_name, transform=c.transform) for c in CASES}
 
     semaphore = asyncio.Semaphore(8)
     results: dict[tuple[str, str, int], dict] = {}
@@ -219,7 +324,7 @@ async def main() -> None:
         async def one(model: str, case: Case, run: int) -> None:
             async with semaphore:
                 results[(model, case.label, run)] = await ask(
-                    client, model, case, images[case.image_name + str(case.darken)]
+                    client, model, case, images[case.image_key]
                 )
 
         jobs = [one(m, c, r) for m in models for c in CASES for r in range(RUNS)]

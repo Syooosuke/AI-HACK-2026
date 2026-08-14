@@ -163,7 +163,7 @@ ORCA_STUB_MODE=false           # true、またはORCA_API_KEY未設定でスタ�
 
 # --- 判定パラメータ（チューニング可能な初期値）---
 TASK_REVIEW_SCORE_THRESHOLD=70      # 依頼情報の十分性スコア。これ未満は補足要求
-SUBMISSION_SCORE_THRESHOLD=70       # 画像検品スコア。これ未満は再撮影要求
+SUBMISSION_SCORE_THRESHOLD=60       # 画像検品スコア。これ未満は再撮影要求
 MAX_RETAKE_COUNT=2                  # 再撮影の上限回数（提出は最大3回）
 LOCATION_TOLERANCE_METERS=100       # 依頼地点と撮影地点の許容距離
 TIMESTAMP_TOLERANCE_SECONDS=300     # 端末時刻とサーバー受信時刻の許容差
@@ -194,7 +194,7 @@ NEXT_PUBLIC_DEFAULT_MAP_CENTER_LNG=139.7005
 | 変数 | 初期値 | 根拠 |
 |---|---|---|
 | `TASK_REVIEW_SCORE_THRESHOLD` | 70 | 「撮影対象・場所・条件」の3要素が揃えば70点以上になるようプロンプト側で採点基準を固定する |
-| `SUBMISSION_SCORE_THRESHOLD` | 70 | 主要被写体が写っており、ブレ・露出が実用範囲であれば70点以上 |
+| `SUBMISSION_SCORE_THRESHOLD` | 60 | 主要被写体が写っており、状態が読み取れれば70点以上が出る。構図・明るさの粗さで数点落ちても合格を残す |
 | `LOCATION_TOLERANCE_METERS` | 100 | 都市部のGPS誤差（10〜50m）と撮影位置の自由度を考慮 |
 | `TIMESTAMP_TOLERANCE_SECONDS` | 300 | 端末時刻ズレの実用上限 |
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import get_settings
-from app.schemas.ai import ImageValidationResult
+from app.schemas.ai import ImageValidationResult, IssueItem
 from app.services import image_validation
 from app.services.orca_client import OrcaResult
 
@@ -143,3 +143,60 @@ async def test_failed_extra_call_does_not_break_the_verdict(
 
     # 72（合格）と 90（合格）の2票で合格
     assert out.parsed.score >= 70  # type: ignore[union-attr]
+
+
+# ----------------------------------------------------------------------
+# 自己矛盾した応答の補正
+# ----------------------------------------------------------------------
+def _contradictory(score: int) -> ImageValidationResult:
+    """不備を1つも挙げていないのにスコアだけ低い、退化した応答。"""
+    return ImageValidationResult(
+        score=score,
+        subject_present=True,
+        framing_ok=True,
+        sharpness_ok=True,
+        brightness_ok=True,
+        reference_match=None,
+        observed_scene="",
+        daylight_state="night",
+        weather_hint="unknown",
+        issues=[],
+        summary="",
+    )
+
+
+def test_low_score_without_any_reported_issue_is_lifted_to_the_threshold() -> None:
+    """全フラグ true・issues 空で score 0 という応答を、そのまま不合格にしない。
+
+    実測で確認したモデル側の退化した出力。問題の無い写真で再撮影を求めたうえに
+    上限（2回）を1つ消費してしまうため、判断材料が「合格」しか無いなら合格側に倒す。
+    """
+    result = _contradictory(0)
+
+    image_validation._repair_contradictory_score(result, score_threshold=70)
+
+    assert result.score == 70
+
+
+def test_repair_does_not_rescue_a_genuine_rejection() -> None:
+    """所見を書いたうえでの低評価や、不備が報告された応答は補正しない。"""
+    with_finding = _contradictory(20)
+    with_finding.observed_scene = "駅の通路。券売機と案内柱は写るが改札は画角の外"
+    with_finding.summary = "改札が写っておらず依頼内容を確認できません。"
+    image_validation._repair_contradictory_score(with_finding, score_threshold=70)
+    assert with_finding.score == 20
+
+    with_issue = _contradictory(20)
+    with_issue.issues = [IssueItem(code="TOO_DARK", message="街灯の下に寄って撮ってください")]
+    image_validation._repair_contradictory_score(with_issue, score_threshold=70)
+    assert with_issue.score == 20
+
+    no_subject = _contradictory(20)
+    no_subject.subject_present = False
+    image_validation._repair_contradictory_score(no_subject, score_threshold=70)
+    assert no_subject.score == 20
+
+    bad_quality = _contradictory(20)
+    bad_quality.sharpness_ok = False
+    image_validation._repair_contradictory_score(bad_quality, score_threshold=70)
+    assert bad_quality.score == 20
