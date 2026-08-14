@@ -28,7 +28,7 @@ type Tab = {
   href: string;
   label: string;
   icon: string;
-  /** 目立たせる導線（依頼する）。モバイルは中央の丸ボタン、PCは塗りボタン。 */
+  /** モバイルで中央の丸ボタンとして目立たせる導線（依頼する）。 */
   primary?: boolean;
 };
 
@@ -120,34 +120,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Logo height={26} />
         </Link>
         <nav className="flex flex-1 flex-col gap-1">
-          {TABS.map((tab) =>
-            tab.primary ? (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className="my-2 flex items-center justify-center gap-2 rounded-xl bg-client px-3 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700"
-              >
-                <span aria-hidden>{tab.icon}</span>
-                {tab.label}
-              </Link>
-            ) : (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
-                  isActive(pathname, tab.href)
-                    ? "bg-slate-100 text-client"
-                    : "text-slate-500 hover:bg-slate-50"
-                }`}
-              >
-                <span aria-hidden className="relative text-lg leading-none">
-                  {tab.icon}
-                  {tab.href === "/notifications" && <TabBadge count={unreadCount} />}
-                </span>
-                {tab.label}
-              </Link>
-            ),
-          )}
+          {TABS.map((tab) => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
+                isActive(pathname, tab.href)
+                  ? "bg-slate-100 text-client"
+                  : "text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <span aria-hidden className="relative text-lg leading-none">
+                {tab.icon}
+                {tab.href === "/notifications" && <TabBadge count={unreadCount} />}
+              </span>
+              {tab.label}
+            </Link>
+          ))}
         </nav>
         {user && (
           <Link
