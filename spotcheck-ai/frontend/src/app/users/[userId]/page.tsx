@@ -59,7 +59,7 @@ export default function PublicProfilePage() {
 
   const { asRequester, asWorker } = profile;
   const hasRequesterHistory = asRequester.publishedTaskCount > 0;
-  const hasWorkerHistory = asWorker.approvedSubmissionCount > 0;
+  const hasWorkerHistory = asWorker.approvedSubmissionCount > 0 || asWorker.reviewCount > 0;
 
   return (
     <div className="space-y-5">
@@ -106,6 +106,14 @@ export default function PublicProfilePage() {
             />
             <div className="min-w-0 flex-1">
               <InfoRow label="合格した提出" value={`${asWorker.approvedSubmissionCount}件`} />
+              <InfoRow
+                label="依頼者からの評価"
+                value={
+                  asWorker.averageRating == null
+                    ? "まだ評価がありません"
+                    : `★${asWorker.averageRating.toFixed(1)}（${asWorker.reviewCount}件）`
+                }
+              />
             </div>
           </div>
         ) : (

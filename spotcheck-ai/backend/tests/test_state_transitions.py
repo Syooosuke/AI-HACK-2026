@@ -76,6 +76,58 @@ def test_concurrent_accept_allows_only_one(session: Session, users: dict[str, Us
     assert assignment_repo.count_active(session, task_id) == 1
 
 
+def test_worker_can_withdraw_before_submission_and_reopen_slot(
+    session: Session, users: dict[str, User]
+) -> None:
+    """撮影前に辞退すると受注枠が空き、依頼が再び募集中になる。"""
+    task = make_task(session, client=users["client"])
+    accepted = task_service.accept_task(session, worker=users["worker"], task_id=task.id)
+    session.commit()
+
+    withdrawn = task_service.withdraw_assignment(session, worker=users["worker"], task_id=task.id)
+
+    assert withdrawn.id == accepted.id
+    assert withdrawn.status is AssignmentStatus.CANCELLED
+    assert assignment_repo.count_active(session, task.id) == 0
+    assert task.status is TaskStatus.OPEN
+    stored = assignment_repo.get(session, accepted.id)
+    assert stored is not None
+    assert stored.completed_at is not None
+
+    # 戻った枠は別のワーカーがすぐ受注できる。
+    next_assignment = task_service.accept_task(session, worker=users["worker2"], task_id=task.id)
+    assert next_assignment.status is AssignmentStatus.ACCEPTED
+
+
+def test_worker_cannot_withdraw_after_submission(session: Session, users: dict[str, User]) -> None:
+    """再撮影待ちで status=accepted に戻っても、一度提出済みなら辞退できない。"""
+    task = make_task(session, client=users["client"])
+    assignment = make_assignment(session, task=task, worker=users["worker"])
+    now = datetime.now(UTC)
+    submission_repo.create(
+        session,
+        Submission(
+            assignment_id=assignment.id,
+            task_id=task.id,
+            worker_id=users["worker"].id,
+            attempt_no=1,
+            raw_image_url="test/submitted.jpg",
+            captured_lat=task.location_lat,
+            captured_lng=task.location_lng,
+            captured_at=now,
+            received_at=now,
+            ai_validation_status=ValidationStatus.REJECTED,
+        ),
+    )
+    session.commit()
+
+    with pytest.raises(Conflict) as exc:
+        task_service.withdraw_assignment(session, worker=users["worker"], task_id=task.id)
+
+    assert exc.value.code == "INVALID_STATE"
+    assert assignment.status is AssignmentStatus.ACCEPTED
+
+
 # ----------------------------------------------------------------------
 # 再撮影ループ
 # ----------------------------------------------------------------------

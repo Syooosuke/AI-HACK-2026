@@ -64,6 +64,14 @@ class TaskReviewResponse(CamelModel):
     review: ReviewResult
 
 
+class TaskDescriptionGenerationRequest(CamelModel):
+    title: str = Field(min_length=1, max_length=60)
+
+
+class TaskDescriptionGenerationResponse(CamelModel):
+    description: str
+
+
 class TaskResubmitRequest(CamelModel):
     """`POST /api/tasks/{taskId}/resubmit`。description のみ必須、他は差分更新。"""
 
@@ -71,6 +79,23 @@ class TaskResubmitRequest(CamelModel):
     scheduled_at: datetime | None = None
     deadline_at: datetime | None = None
     reward_amount: int | None = Field(default=None, ge=100, le=100000)
+
+
+class TaskDuplicateRequest(CamelModel):
+    """過去の依頼を日時だけ変更して再投稿する。"""
+
+    scheduled_at: datetime
+    deadline_at: datetime
+
+
+class TaskDeadlineExtensionRequest(CamelModel):
+    """依頼者による提出期限の延長。"""
+
+    deadline_at: datetime
+
+
+class TaskDeadlineExtensionResponse(CamelModel):
+    task: TaskSummary
 
 
 class TaskListItem(CamelModel):
@@ -200,6 +225,10 @@ class AssignmentDetail(CamelModel):
 
 
 class AcceptTaskResponse(CamelModel):
+    assignment: AssignmentDetail
+
+
+class WithdrawAssignmentResponse(CamelModel):
     assignment: AssignmentDetail
 
 

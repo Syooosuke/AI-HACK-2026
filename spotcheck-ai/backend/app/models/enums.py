@@ -48,6 +48,18 @@ class PaymentStatus(str, enum.Enum):
     STUB_FAILED = "stub_failed"
 
 
+class NotificationType(str, enum.Enum):
+    TASK_APPROVED = "task_approved"
+    TASK_NEEDS_INFO = "task_needs_info"
+    TASK_REJECTED = "task_rejected"
+    TASK_ACCEPTED = "task_accepted"
+    SUBMISSION_APPROVED = "submission_approved"
+    SUBMISSION_RETAKE = "submission_retake"
+    SUBMISSION_FAILED = "submission_failed"
+    TASK_COMPLETED = "task_completed"
+    TASK_EXPIRED = "task_expired"
+
+
 #: 一度でも掲示板に公開された依頼のステータス（docs/03-api.md 3.4.1）。
 #: 公開プロフィールの統計はこれを母数にする。screening / needs_info / rejected は
 #: 未公開の下書き相当・名誉に関わるため含めない。

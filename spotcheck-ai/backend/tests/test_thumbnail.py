@@ -235,3 +235,120 @@ async def test_streetview_returns_image_when_ok(monkeypatch: pytest.MonkeyPatch)
         lat=35.6595, lng=139.7005, transport=httpx.MockTransport(handler)
     )
     assert result == tiny_jpeg()
+
+
+async def test_streetview_retries_temporary_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """1回目がタイムアウトでも、2回目で取得できれば画像を返す。"""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_maps_server_api_key", "test-key")
+    # 待ち時間はテストでは潰す
+    monkeypatch.setattr(streetview, "BACKOFF_SECONDS", (0.0, 0.0))
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        calls.append(url)
+        if "metadata" in url:
+            # 1回目のメタデータ取得だけ失敗させる
+            if len([c for c in calls if "metadata" in c]) == 1:
+                raise httpx.ConnectTimeout("一時的な失敗", request=request)
+            return httpx.Response(200, json={"status": "OK"})
+        return httpx.Response(200, content=tiny_jpeg())
+
+    result = await streetview.fetch_image(
+        lat=35.6595, lng=139.7005, transport=httpx.MockTransport(handler)
+    )
+
+    assert result == tiny_jpeg()
+    assert len([c for c in calls if "metadata" in c]) == 2  # 再試行している
+
+
+async def test_streetview_retries_server_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """画像取得が 5xx のときも再試行する。"""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_maps_server_api_key", "test-key")
+    monkeypatch.setattr(streetview, "BACKOFF_SECONDS", (0.0, 0.0))
+
+    image_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal image_calls
+        if "metadata" in str(request.url):
+            return httpx.Response(200, json={"status": "OK"})
+        image_calls += 1
+        if image_calls == 1:
+            return httpx.Response(503, text="一時的に利用できません")
+        return httpx.Response(200, content=tiny_jpeg())
+
+    result = await streetview.fetch_image(
+        lat=35.6595, lng=139.7005, transport=httpx.MockTransport(handler)
+    )
+
+    assert result == tiny_jpeg()
+    assert image_calls == 2
+
+
+async def test_streetview_does_not_retry_zero_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    """パノラマが無い地点は再試行しない（待ち時間と課金の無駄を避ける）。"""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_maps_server_api_key", "test-key")
+    monkeypatch.setattr(streetview, "BACKOFF_SECONDS", (0.0, 0.0))
+
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"status": "ZERO_RESULTS"})
+
+    assert (
+        await streetview.fetch_image(lat=0.0, lng=0.0, transport=httpx.MockTransport(handler))
+        is None
+    )
+    assert calls == 1
+
+
+async def test_streetview_does_not_retry_request_denied(monkeypatch: pytest.MonkeyPatch) -> None:
+    """キーが拒否されている場合も再試行しない。"""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_maps_server_api_key", "test-key")
+    monkeypatch.setattr(streetview, "BACKOFF_SECONDS", (0.0, 0.0))
+
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"status": "REQUEST_DENIED", "error_message": "拒否"})
+
+    assert (
+        await streetview.fetch_image(
+            lat=35.6595, lng=139.7005, transport=httpx.MockTransport(handler)
+        )
+        is None
+    )
+    assert calls == 1
+
+
+async def test_streetview_gives_up_after_max_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """一時的な失敗が続く場合は上限で諦める（無限に試さない）。"""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_maps_server_api_key", "test-key")
+    monkeypatch.setattr(streetview, "BACKOFF_SECONDS", (0.0, 0.0))
+
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectTimeout("落ちたまま", request=request)
+
+    assert (
+        await streetview.fetch_image(
+            lat=35.6595, lng=139.7005, transport=httpx.MockTransport(handler)
+        )
+        is None
+    )
+    # 初回 + 再試行2回 = 3回で打ち切る
+    assert calls == 3

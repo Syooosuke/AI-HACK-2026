@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFound
 from app.models import User
-from app.repositories import user_repo
+from app.repositories import user_repo, worker_review_repo
 from app.schemas.task import TaskOwner
 from app.schemas.user import (
     PublicProfile,
@@ -44,6 +44,7 @@ def build_public_profile(session: Session, user_id: uuid.UUID) -> PublicProfile:
     """
     user = _require_user(session, user_id)
     counts = user_repo.requester_counts(session, user_id)
+    review_stats = worker_review_repo.stats_for_worker(session, user_id)
 
     return PublicProfile(
         id=user.id,
@@ -59,6 +60,8 @@ def build_public_profile(session: Session, user_id: uuid.UUID) -> PublicProfile:
             # 0〜100 のまま返す。画面はゲージで表示する（PR #11 の方針）
             trust_score=float(user.trust_score),
             approved_submission_count=user.completed_task_count,
+            average_rating=review_stats.average,
+            review_count=review_stats.count,
         ),
     )
 

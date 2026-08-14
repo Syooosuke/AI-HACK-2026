@@ -21,6 +21,7 @@ const MESSAGES: Record<string, string> = {
   ALREADY_ACCEPTED: "すでにこの依頼を受注しています。",
   INVALID_STATE: "現在の状態ではこの操作を行えません。",
   RETAKE_LIMIT_EXCEEDED: "再撮影の上限に達しています。",
+  REVIEW_ALREADY_EXISTS: "この提出はすでに評価済みです。",
   VALIDATION_ERROR: "入力内容を確認してください。",
   FILE_TOO_LARGE: "画像サイズが大きすぎます（15MBまで）。",
   AI_SERVICE_ERROR: "AIの処理に失敗しました。もう一度お試しください。",

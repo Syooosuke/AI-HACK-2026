@@ -14,12 +14,13 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.routes import tasks as tasks_route
 from app.core.config import get_settings
 from app.main import app
-from app.models import User
+from app.models import Task, User
 from app.services.orca_client import OrcaClient
 from tests.conftest import CLIENT_ID, auth_headers
 
@@ -89,6 +90,52 @@ def reference_image() -> bytes:
 
 
 HEADERS = auth_headers(CLIENT_ID)
+
+
+def test_generate_short_description_from_title(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generated = (
+        "駅前の工事現場を正面から撮影し、建物全体と現在の進捗状況が分かる写真を提出してください。"
+    )
+    install_orca(monkeypatch, json.dumps({"description": generated}, ensure_ascii=False))
+    calls: list[dict[str, Any]] = []
+    original = OrcaClient.complete_json
+
+    async def spy(self: OrcaClient, **kwargs: Any):
+        calls.append(kwargs)
+        return await original(self, **kwargs)
+
+    monkeypatch.setattr(OrcaClient, "complete_json", spy)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/tasks/generate-description",
+            headers=HEADERS,
+            json={"title": "駅前の再開発工事の進捗確認"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"description": generated}
+    assert calls[0]["purpose"] == "task_description_generation"
+    assert calls[0]["tier"] == "light"
+    assert calls[0]["max_tokens"] == 300
+    assert "駅前の再開発工事の進捗確認" in calls[0]["user_prompt"]
+
+
+def test_generate_description_requires_login_and_valid_title(
+    session: Session, users: dict[str, User]
+) -> None:
+    with TestClient(app) as client:
+        unauthenticated = client.post(
+            "/api/tasks/generate-description", json={"title": "工事状況の確認"}
+        )
+        empty_title = client.post(
+            "/api/tasks/generate-description", headers=HEADERS, json={"title": ""}
+        )
+
+    assert unauthenticated.status_code == 401
+    assert empty_title.status_code == 400
 
 
 def test_create_task_publishes_on_approval(
@@ -241,6 +288,77 @@ def test_resubmit_is_rejected_unless_needs_info(
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "INVALID_STATE"
+
+
+def test_duplicate_task_copies_content_and_changes_only_schedule(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """過去依頼をテンプレートにし、日時だけ変えた独立した依頼を作成できる。"""
+    install_orca(monkeypatch, llm_output(), llm_output(summary="複製した依頼です。"))
+    now = datetime.now(UTC)
+    new_scheduled_at = now + timedelta(days=1)
+    new_deadline_at = now + timedelta(days=1, hours=5)
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/tasks",
+            headers=HEADERS,
+            data=form_data(),
+            files=[("referenceImages", ("ref.jpg", reference_image(), "image/jpeg"))],
+        )
+        source = created.json()["task"]
+        response = client.post(
+            f"/api/tasks/{source['id']}/duplicate",
+            headers=HEADERS,
+            json={
+                "scheduledAt": new_scheduled_at.isoformat(),
+                "deadlineAt": new_deadline_at.isoformat(),
+            },
+        )
+
+    assert response.status_code == 201
+    duplicate = response.json()["task"]
+    assert duplicate["id"] != source["id"]
+    for field in (
+        "title",
+        "description",
+        "locationLat",
+        "locationLng",
+        "locationAddress",
+        "rewardAmount",
+        "requiredWorkerCount",
+    ):
+        assert duplicate[field] == source[field]
+    assert duplicate["scheduledAt"] == new_scheduled_at.isoformat().replace("+00:00", "Z")
+    assert duplicate["deadlineAt"] == new_deadline_at.isoformat().replace("+00:00", "Z")
+    assert duplicate["status"] == "open"
+
+    tasks = list(session.scalars(select(Task).order_by(Task.created_at)))
+    assert len(tasks) == 2
+    assert len(tasks[0].reference_images) == 1
+    assert len(tasks[1].reference_images) == 1
+    assert tasks[1].reference_images[0].image_url == tasks[0].reference_images[0].image_url
+
+
+def test_duplicate_task_rejects_other_users_task(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_orca(monkeypatch, llm_output())
+    now = datetime.now(UTC)
+
+    with TestClient(app) as client:
+        created = client.post("/api/tasks", headers=HEADERS, data=form_data())
+        response = client.post(
+            f"/api/tasks/{created.json()['task']['id']}/duplicate",
+            headers=auth_headers(users["worker"]),
+            json={
+                "scheduledAt": (now + timedelta(days=1)).isoformat(),
+                "deadlineAt": (now + timedelta(days=1, hours=5)).isoformat(),
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 def test_ai_failure_returns_502(

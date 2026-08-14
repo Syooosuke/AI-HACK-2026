@@ -22,7 +22,7 @@ from app.models import (
     User,
     ValidationStatus,
 )
-from app.repositories import assignment_repo, submission_repo, task_repo
+from app.repositories import assignment_repo, submission_repo, task_repo, worker_review_repo
 from app.schemas.submission import (
     Issue,
     RetakeInfo,
@@ -167,6 +167,7 @@ async def get_submission_status(
         submission.ai_validation_status is ValidationStatus.REJECTED
         and assignment.status is AssignmentStatus.ACCEPTED
     ) or submission.ai_validation_status is ValidationStatus.ERROR
+    review = worker_review_repo.get_by_submission(session, submission.id)
 
     return SubmissionStatusResponse(
         id=submission.id,
@@ -189,6 +190,19 @@ async def get_submission_status(
             remaining=max(0, settings.max_retake_count - assignment.retake_count),
         ),
         assignment_status=assignment.status,
+        worker_review=(
+            {
+                "id": review.id,
+                "submission_id": review.submission_id,
+                "worker_id": review.worker_id,
+                "rating": review.rating,
+                "tags": review.tags,
+                "comment": review.comment,
+                "created_at": review.created_at,
+            }
+            if review
+            else None
+        ),
     )
 
 
@@ -227,6 +241,7 @@ async def get_task_results(
     results: list[TaskResultItem] = []
     for submission, worker in rows:
         feedback = submission.ai_feedback or {}
+        review = worker_review_repo.get_by_submission(session, submission.id)
         results.append(
             TaskResultItem(
                 submission_id=submission.id,
@@ -239,9 +254,23 @@ async def get_task_results(
                 ai_summary=feedback.get("summary"),
                 location_check=submission.location_check,
                 worker=WorkerSummary(
+                    id=worker.id,
                     display_name=worker.display_name,
                     trust_score=float(worker.trust_score),
                     avatar_url=avatar_service.public_url(worker),
+                ),
+                worker_review=(
+                    {
+                        "id": review.id,
+                        "submission_id": review.submission_id,
+                        "worker_id": review.worker_id,
+                        "rating": review.rating,
+                        "tags": review.tags,
+                        "comment": review.comment,
+                        "created_at": review.created_at,
+                    }
+                    if review
+                    else None
                 ),
             )
         )

@@ -16,8 +16,12 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { isPublicPath } from "@/components/auth/AuthGuard";
 import { Avatar } from "@/components/ui/Avatar";
+import { getUnreadNotificationCount } from "@/lib/api/notifications";
 import { getCurrentUser, subscribeSession } from "@/lib/session";
 import type { AuthUser } from "@/types/api";
+
+/** お知らせタブの未読バッジをポーリングする間隔。一覧画面ほど鮮度は要らないため長め。 */
+const UNREAD_POLL_INTERVAL_MS = 30_000;
 
 type Tab = {
   href: string;
@@ -43,16 +47,53 @@ function isActive(pathname: string | null, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/** タブアイコン右上の未読件数バッジ。0件なら何も出さない。 */
+function TabBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-hidden
+      className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-fail px-1 text-[9px] font-bold leading-none text-white"
+    >
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const sync = () => setUser(getCurrentUser());
     sync();
     return subscribeSession(sync);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      getUnreadNotificationCount()
+        .then(({ count }) => {
+          if (!cancelled) setUnreadCount(count);
+        })
+        .catch(() => {
+          // バッジは補助表示のため、失敗しても静かに無視する（既存のトースト運用を邪魔しない）
+        });
+    };
+    load();
+    const timer = window.setInterval(load, UNREAD_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [user]);
 
   const isCapture = pathname?.endsWith("/capture") ?? false;
   const isAuthPage = isPublicPath(pathname);
@@ -98,8 +139,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                     : "text-slate-500 hover:bg-slate-50"
                 }`}
               >
-                <span aria-hidden className="text-lg leading-none">
+                <span aria-hidden className="relative text-lg leading-none">
                   {tab.icon}
+                  {tab.href === "/notifications" && <TabBadge count={unreadCount} />}
                 </span>
                 {tab.label}
               </Link>
@@ -178,8 +220,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   active ? "text-client" : "text-slate-400"
                 }`}
               >
-                <span aria-hidden className="text-lg leading-none">
+                <span aria-hidden className="relative text-lg leading-none">
                   {tab.icon}
+                  {tab.href === "/notifications" && <TabBadge count={unreadCount} />}
                 </span>
                 {tab.label}
               </Link>

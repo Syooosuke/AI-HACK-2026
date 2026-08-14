@@ -2,7 +2,11 @@
 
 /**
  * 画面⑦ AI画像検品・安全処理 ＋ 画面⑧ 再撮影フィードバック
- * （docs/05-frontend.md 画面⑦・⑧）。2秒間隔でポーリングする。
+ * （docs/05-frontend.md 画面⑦・⑧）。
+ *
+ * **検品は実測30秒〜15分かかる**ため、段階的バックオフでポーリングする
+ * （最初の30秒は2秒間隔 → 以降 5秒 → 15秒 → 30秒）。
+ * タブを離れている間はブラウザが setTimeout を抑制するので、復帰時に即座に1回取得する。
  */
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -17,12 +21,15 @@ import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { getSubmission } from "@/lib/api/submissions";
 import { getTask } from "@/lib/api/tasks";
-import type { SubmissionStatus } from "@/types/api";
+import { formatElapsed, nextPollInterval, shouldStopPolling } from "@/lib/polling";
+import type { SubmissionStatus, WorkerReviewTag } from "@/types/api";
 
-const POLL_INTERVAL_MS = 2000;
-//: 60秒で打ち切る（docs/06-phases.md Phase 6）
-const MAX_POLL_MS = 60_000;
-const MAX_POLL_ATTEMPTS = MAX_POLL_MS / POLL_INTERVAL_MS;
+const REVIEW_TAG_LABELS: Record<WorkerReviewTag, string> = {
+  as_requested: "依頼どおり",
+  clear_photo: "写真が見やすい",
+  fast_response: "対応が早い",
+  accurate_location: "位置情報が正確",
+};
 
 export default function SubmissionStatusPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -32,7 +39,8 @@ export default function SubmissionStatusPage() {
   const [data, setData] = useState<SubmissionStatus | null>(null);
   const [reward, setReward] = useState<number | null>(null);
   const [stopped, setStopped] = useState(false);
-  const attemptsRef = useRef(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startedAtRef = useRef(Date.now());
 
   // 報酬確定の表示に依頼の報酬額を使う（docs/05-frontend.md 画面⑦）
   useEffect(() => {
@@ -41,11 +49,13 @@ export default function SubmissionStatusPage() {
       .catch(() => setReward(null));
   }, [taskId]);
 
+  /** 最新の検品状況を取得する。戻り値は「検品が終わったか」。 */
   const load = useCallback(async () => {
     if (!submissionId) return true;
     try {
       const next = await getSubmission(submissionId);
       setData(next);
+      // error も終了状態として扱う（再送信の案内を出すため、待ち続けない）
       return next.aiValidationStatus !== "pending" && next.aiValidationStatus !== "processing";
     } catch (cause) {
       toast.error(toMessage(cause));
@@ -57,22 +67,41 @@ export default function SubmissionStatusPage() {
     if (!submissionId) return;
     let timer: number | undefined;
     let active = true;
+    let finished = false;
+    startedAtRef.current = Date.now();
 
     const tick = async () => {
       const done = await load();
       if (!active) return;
-      attemptsRef.current += 1;
-      if (done || attemptsRef.current >= MAX_POLL_ATTEMPTS) {
+
+      const elapsed = Date.now() - startedAtRef.current;
+      setElapsedMs(elapsed);
+
+      if (done) {
+        finished = true;
+        return;
+      }
+      if (shouldStopPolling(elapsed)) {
+        finished = true;
         setStopped(true);
         return;
       }
-      timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
+      timer = window.setTimeout(() => void tick(), nextPollInterval(elapsed));
     };
     void tick();
+
+    // タブを離れている間は setTimeout が抑制されるため、復帰時に即座に取り直す
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || finished || !active) return;
+      if (timer) window.clearTimeout(timer);
+      void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       active = false;
       if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load, submissionId]);
 
@@ -119,8 +148,36 @@ export default function SubmissionStatusPage() {
         />
       </Card>
 
-      {processing && !stopped && <PollingIndicator label="2秒ごとに検品状況を確認しています" />}
-      {processing && stopped && <PollingIndicator stopped />}
+      {processing && !stopped && (
+        <PollingIndicator
+          label={`検品状況を確認しています（経過 ${formatElapsed(elapsedMs)}）`}
+          hint="AIの検品は30秒〜15分ほどかかります。このまま開いたままでも、閉じてあとから確認しても構いません。"
+        />
+      )}
+      {processing && stopped && (
+        <Card className="space-y-3 border-slate-300 bg-slate-100">
+          <p className="text-sm font-bold text-slate-700">自動更新を停止しました</p>
+          <p className="text-xs leading-relaxed text-slate-600">
+            検品に15分以上かかっています。結果は「受注した依頼」からいつでも確認できます。
+          </p>
+          <div className="flex gap-2">
+            <Button
+              accent="worker"
+              onClick={() => {
+                setStopped(false);
+                startedAtRef.current = Date.now();
+                setElapsedMs(0);
+                void load();
+              }}
+            >
+              もう一度確認する
+            </Button>
+            <Button accent="neutral" onClick={() => router.push("/jobs")}>
+              受注した依頼へ
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {approved && (
         <Card className="space-y-3 border-emerald-200 bg-emerald-50">
@@ -144,6 +201,48 @@ export default function SubmissionStatusPage() {
           <Button accent="worker" onClick={() => router.push("/home")}>
             依頼一覧へ戻る
           </Button>
+        </Card>
+      )}
+
+      {approved && (
+        <Card>
+          <SectionTitle>依頼者からの評価</SectionTitle>
+          {data.workerReview ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-bold text-slate-700">今回の評価</span>
+                <span
+                  className="text-xl tracking-wide text-amber-400"
+                  aria-label={`${data.workerReview.rating}つ星`}
+                >
+                  {"★".repeat(data.workerReview.rating)}
+                  <span className="text-slate-200">
+                    {"★".repeat(5 - data.workerReview.rating)}
+                  </span>
+                </span>
+              </div>
+              {data.workerReview.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {data.workerReview.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-800"
+                    >
+                      {REVIEW_TAG_LABELS[tag]}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {data.workerReview.comment && (
+                <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+                  {data.workerReview.comment}
+                </p>
+              )}
+              <p className="text-xs text-slate-400">依頼者からの匿名評価です。</p>
+            </div>
+          ) : (
+            <p className="py-2 text-sm text-slate-500">まだ依頼者から評価されていません。</p>
+          )}
         </Card>
       )}
 

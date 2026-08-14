@@ -4,18 +4,22 @@ from app.repositories import (
     ai_invocation_repo,
     assignment_repo,
     like_repo,
+    notification_repo,
     saved_search_repo,
     submission_repo,
     task_repo,
     user_repo,
+    worker_review_repo,
 )
 
 __all__ = [
     "ai_invocation_repo",
     "assignment_repo",
     "like_repo",
+    "notification_repo",
     "saved_search_repo",
     "submission_repo",
     "task_repo",
     "user_repo",
+    "worker_review_repo",
 ]

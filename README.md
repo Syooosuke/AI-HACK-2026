@@ -135,6 +135,20 @@ sequenceDiagram
 HTTPSで配信されるため、**スマホからカメラと現在地取得も使えます**。
 自分の依頼は自分で受注できないため、依頼〜受注を通して見る場合は2アカウントを使ってください。
 
+**このURLで動いているのは `main` ブランチです。** `main` にマージすると GitHub Actions が
+自動でデプロイするため、`main` と本番は常に一致します。
+
+```mermaid
+flowchart LR
+    F["feature ブランチ"] -->|PR| D["dev"]
+    D -->|"PR（人間が承認）"| M["main"]
+    M -->|GitHub Actions| A["マイグレーション"]
+    A --> B["バックエンド<br/>Cloud Run"]
+    B --> C["フロントエンド<br/>Cloud Run"]
+    C --> V["疎通確認"]
+```
+
+`dev` の変更はまだ本番に出ていません。出すには `dev` → `main` の PR をマージします。
 デプロイ手順は `spotcheck-ai/docs/07-deployment.md` を参照。
 QRコードを作り直すときは `./backend/.venv/bin/python deploy/make_qr.py <URL>`。
 

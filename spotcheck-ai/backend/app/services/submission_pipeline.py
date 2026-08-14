@@ -25,6 +25,7 @@ from app.core.logging import get_logger
 from app.core.storage import StorageBackend, get_storage
 from app.models import (
     AssignmentStatus,
+    NotificationType,
     Submission,
     Task,
     TaskAssignment,
@@ -39,6 +40,7 @@ from app.services import (
     image_validation,
     location_check,
     masking,
+    notification_service,
     payment_stub,
     result_summary,
     task_service,
@@ -220,6 +222,25 @@ async def _handle_approved(
     # 6-6. 決済スタブ（D-03）。charge / payout を記録するだけで実決済は行わない
     payment_stub.record_settlement(session, task=task, submission=submission)
 
+    notification_service.notify(
+        session,
+        user_id=worker.id,
+        type=NotificationType.SUBMISSION_APPROVED,
+        title="提出が合格しました",
+        body=f"「{task.title}」の提出が合格し、報酬{task.reward_amount}円が確定しました。",
+        task_id=task.id,
+        submission_id=submission.id,
+    )
+    if task.status is TaskStatus.COMPLETED:
+        notification_service.notify(
+            session,
+            user_id=task.client_id,
+            type=NotificationType.TASK_COMPLETED,
+            title="依頼が完了しました",
+            body=task.title,
+            task_id=task.id,
+        )
+
     # 6-7. 合格画像をOrcaRouterへ渡し、依頼全体の調査結果を生成する。
     # 先に flush して、今回の提出が approved としてクエリに含まれる状態にする。
     session.flush()
@@ -249,11 +270,30 @@ def _handle_rejected(
         # 再撮影を許可する（retake_count を進めて accepted へ戻す）
         assignment.retake_count += 1
         assignment.status = AssignmentStatus.ACCEPTED
+        remaining = settings.max_retake_count - assignment.retake_count
+        notification_service.notify(
+            session,
+            user_id=worker.id,
+            type=NotificationType.SUBMISSION_RETAKE,
+            title="再撮影が必要です",
+            body=f"「{task.title}」の提出が不合格でした。残り再撮影回数: {remaining}回。",
+            task_id=task.id,
+            submission_id=submission.id,
+        )
     else:
         # 上限超過。枠を他ワーカーへ再開放する（D-08）
         assignment.status = AssignmentStatus.FAILED
         assignment.completed_at = datetime.now(UTC)
         worker.apply_trust_score_delta(TRUST_SCORE_ON_FAILED)
+        notification_service.notify(
+            session,
+            user_id=worker.id,
+            type=NotificationType.SUBMISSION_FAILED,
+            title="受注がキャンセルされました",
+            body=f"「{task.title}」の再撮影上限を超えたため、受注がキャンセルされました。",
+            task_id=task.id,
+            submission_id=submission.id,
+        )
         session.flush()
         task_service.reopen_if_slot_available(session, task)
     session.flush()
