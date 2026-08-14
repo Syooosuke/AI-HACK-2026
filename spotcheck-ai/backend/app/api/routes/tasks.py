@@ -175,6 +175,14 @@ async def get_task(
     )
 
 
+@router.get("/tasks/{task_id}/review", response_model=TaskReviewResponse)
+def get_task_review(
+    session: DbSession, client: CurrentUser, task_id: uuid.UUID
+) -> TaskReviewResponse:
+    """本人の保存済み審査結果を返す（お知らせ→画面②）。"""
+    return task_service.get_task_review(session, client=client, task_id=task_id)
+
+
 @router.post("/tasks/{task_id}/resubmit", response_model=TaskReviewResponse)
 async def resubmit_task(
     session: DbSession,
