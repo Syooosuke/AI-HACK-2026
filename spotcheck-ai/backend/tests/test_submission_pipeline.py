@@ -225,6 +225,34 @@ def test_person_in_frame_does_not_cause_rejection(
     assert submission.ai_feedback["issues"] == []
 
 
+def test_rough_photo_passes_when_the_subject_is_readable(
+    session: Session, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """構図・ピント・明るさが不十分でも、対象が写っていてスコアが足りれば合格する。
+
+    現地で1枚撮るだけのワーカーに、構図と写りの良さまで求めると依頼が達成できない。
+    **合否を決めるのは対象の有無とスコアであり、この3つのフラグではない**ことを固定する
+    （docs/04-ai-pipeline.md 3.2「判定の基本方針」）。
+    """
+    threshold = get_settings().submission_score_threshold
+    submission = submit_and_validate(
+        session,
+        users,
+        monkeypatch,
+        vlm=vlm_output(
+            score=threshold,
+            subject_present=True,
+            framing_ok=False,
+            sharpness_ok=False,
+            brightness_ok=False,
+            issues=[],
+        ),
+    )
+
+    assert submission.ai_validation_status is ValidationStatus.APPROVED
+    assert submission.ai_feedback["issues"] == []
+
+
 @pytest.mark.parametrize(
     ("code", "message", "overrides"),
     [
