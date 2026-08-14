@@ -159,7 +159,9 @@ async def test_retries_with_repair_message_when_json_is_broken() -> None:
     # 1回目はスキーマを付けない（速さのため）
     assert "response_format" not in first
     # 2回目のリクエストには修復指示が含まれる
-    assert second["messages"][-1]["content"].startswith("直前の出力はJSONとして解析できませんでした")
+    assert second["messages"][-1]["content"].startswith(
+        "直前の出力はJSONとして解析できませんでした"
+    )
     # **形が崩れた後はスキーマを強制する。** 遅くなるが、解析できないよりはよい
     assert second["response_format"]["type"] == "json_schema"
     assert second["response_format"]["json_schema"]["name"] == "TaskReviewResult"
