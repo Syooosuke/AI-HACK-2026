@@ -6,6 +6,72 @@ HTTPSのURLが自動で付く Cloud Run を使う。
 
 ---
 
+## 0. デプロイの経路（**main = 本番**）
+
+**`main` にマージされたものが、そのまま本番のURLになる。**
+GitHub Actions（`.github/workflows/deploy.yml`）が `main` への push を検知して自動でデプロイする。
+
+```
+feature ブランチ ──PR──▶ dev ──PR（人間の確認が必要）──▶ main ──自動──▶ Cloud Run（本番）
+```
+
+| | |
+|---|---|
+| いつ動くか | `main` に push され、かつ `backend/` `frontend/` `deploy/` `deploy.yml` のいずれかが変わったとき |
+| 手動実行 | GitHub の Actions タブ →「Deploy to Cloud Run」→ Run workflow |
+| 同時実行 | `concurrency: deploy-production` で1本に直列化される |
+| 実行順 | **DBマイグレーション → バックエンド → フロントエンド → 疎通確認** |
+
+マイグレーションを**デプロイより先**に流すのは、テーブルが無い状態で新しいコードが起動すると
+500 を返し続けるため。逆順にしてはいけない。
+
+疎通確認（`/api/health` と `/login` が 200 を返すか）まで通って初めて成功扱いになる。
+失敗した場合、Cloud Run は**直前のリビジョンで動き続ける**ので、本番が落ちたままにはならない。
+
+> **`dev` の内容は本番に出ていない。** 本番へ出すには `dev` → `main` の PR を出してマージする。
+> `CLAUDE.md` §6 のとおり、`main` へのマージは人間の確認が必要。
+
+### 0.1 認証方式（Workload Identity 連携）
+
+サービスアカウントの鍵ファイルを GitHub に置かず、GitHub が発行する OIDC トークンを
+Google Cloud 側で検証して権限を渡す。**流出して困る長期鍵が存在しない。**
+
+このリポジトリからの実行だけを許可する条件を、プロバイダ側に付けてある。
+
+```
+--attribute-condition="assertion.repository=='Syooosuke/AI-HACK-2026'"
+```
+
+デプロイ用サービスアカウント: `github-deployer@<PROJECT_ID>.iam.gserviceaccount.com`
+（権限は `run.admin` / `cloudbuild.builds.editor` / `artifactregistry.writer` /
+`iam.serviceAccountUser` / `storage.admin`）
+
+### 0.2 GitHub 側に必要な設定
+
+Secrets（`Settings` → `Secrets and variables` → `Actions`）
+
+| 名前 | 内容 |
+|---|---|
+| `GCP_WIF_PROVIDER` | `projects/<番号>/locations/global/workloadIdentityPools/github/providers/github-provider` |
+| `GCP_SERVICE_ACCOUNT` | デプロイ用サービスアカウントのメールアドレス |
+| `DATABASE_URL` | Supabase の接続文字列（`postgresql+psycopg://`） |
+| `JWT_SECRET` | 本番用の鍵。ローカルの開発用と別にする |
+| `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | Storage 用 |
+| `ORCA_API_KEY` | OrcaRouter |
+| `GOOGLE_MAPS_SERVER_API_KEY` | サーバー用キー（リファラ制限なし・IPで制限） |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | ブラウザ用キー（リファラ制限あり） |
+
+Variables（秘密でないもの。ログに出ても問題ない）
+
+| 名前 | 内容 |
+|---|---|
+| `FRONTEND_URL` | フロントの URL。バックエンドの `CORS_ORIGINS` に使う |
+| `ORCA_STUB_MODE` | `true` / `false` |
+
+これらは `deploy/env.sh` と同じ値。**ローカルの `deploy/env.sh` を更新したら、GitHub 側も更新する。**
+
+---
+
 ## 1. 構成
 
 | レイヤ | 置き場所 | 備考 |
@@ -83,7 +149,14 @@ DATABASE_URL="<同じ値>" ./.venv/bin/python -m scripts.seed_demo_tasks   # 任
 
 ---
 
-## 4. デプロイ
+## 4. 手動デプロイ（**通常は使わない**）
+
+**普段は `main` へのマージで自動デプロイされる（0節）。** 以下は次の場合にだけ使う。
+
+- GitHub Actions が使えないとき（障害・権限切れ）
+- 未マージのブランチを本番URLで試したいとき（**本番が上書きされるので注意**）
+
+手元からデプロイすると `main` の内容と本番がずれる。実行したら、その旨を共有すること。
 
 ```bash
 cd spotcheck-ai
