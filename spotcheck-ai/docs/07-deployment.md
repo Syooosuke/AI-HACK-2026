@@ -17,13 +17,19 @@ feature ブランチ ──PR──▶ dev ──PR（人間の確認が必要�
 
 | | |
 |---|---|
-| いつ動くか | `main` に push され、かつ `backend/` `frontend/` `deploy/` `deploy.yml` のいずれかが変わったとき |
+| いつ動くか | `main` に push され、かつ `spotcheck-ai/backend/**` `spotcheck-ai/frontend/**` `spotcheck-ai/deploy/**` `deploy.yml` のいずれかが変わったとき |
+| ドキュメントだけの変更 | **動かない**（`paths` フィルタで除外している） |
 | 手動実行 | GitHub の Actions タブ →「Deploy to Cloud Run」→ Run workflow |
 | 同時実行 | `concurrency: deploy-production` で1本に直列化される |
+| タイムアウト | 45分 |
 | 実行順 | **DBマイグレーション → バックエンド → フロントエンド → 疎通確認** |
 
 マイグレーションを**デプロイより先**に流すのは、テーブルが無い状態で新しいコードが起動すると
 500 を返し続けるため。逆順にしてはいけない。
+
+マイグレーション用の依存は `pyproject.toml` から自動生成する（`ultralytics` だけ除く。
+PyTorch を数GB引いてくるが、マイグレーションには不要）。手書きの一覧にしないのは、
+将来 `app/models` や `app/core/config` に import が増えたときに気づけないまま壊れるため。
 
 疎通確認（`/api/health` と `/login` が 200 を返すか）まで通って初めて成功扱いになる。
 失敗した場合、Cloud Run は**直前のリビジョンで動き続ける**ので、本番が落ちたままにはならない。
@@ -48,7 +54,7 @@ Google Cloud 側で検証して権限を渡す。**流出して困る長期鍵�
 
 ### 0.2 GitHub 側に必要な設定
 
-Secrets（`Settings` → `Secrets and variables` → `Actions`）
+**Secrets**（`Settings` → `Secrets and variables` → `Actions`）
 
 | 名前 | 内容 |
 |---|---|
@@ -61,12 +67,20 @@ Secrets（`Settings` → `Secrets and variables` → `Actions`）
 | `GOOGLE_MAPS_SERVER_API_KEY` | サーバー用キー（リファラ制限なし・IPで制限） |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | ブラウザ用キー（リファラ制限あり） |
 
-Variables（秘密でないもの。ログに出ても問題ない）
+**Variables**（秘密でないもの。ログに出ても問題なく、変更履歴が追える）
 
 | 名前 | 内容 |
 |---|---|
 | `FRONTEND_URL` | フロントの URL。バックエンドの `CORS_ORIGINS` に使う |
 | `ORCA_STUB_MODE` | `true` / `false` |
+| `ORCA_MODEL_TASK_REVIEW` ほか5つ | 用途ごとのモデル指定（`docs/04-ai-pipeline.md` 1.2） |
+| `ORCA_REVIEW_JURY` / `ORCA_VALIDATION_JURY` / `ORCA_VALIDATION_BOUNDARY` | 冗長化（多数決）の設定 |
+
+**モデルの割り当てを Secrets ではなく Variables に置いているのは、変更履歴を追えるようにするため。**
+秘密情報ではないうえ、「いつからどのモデルに切り替えたか」が事故調査で効く。
+
+> ワークフローは**空文字の環境変数を Cloud Run へ渡さない**。
+> 未設定の項目はアプリ側の既定へ落ち、既存の設定を消してしまうこともない。
 
 これらは `deploy/env.sh` と同じ値。**ローカルの `deploy/env.sh` を更新したら、GitHub 側も更新する。**
 
@@ -74,15 +88,45 @@ Variables（秘密でないもの。ログに出ても問題ない）
 
 ## 1. 構成
 
-| レイヤ | 置き場所 | 備考 |
+| レイヤ | 置き場所 | 設定 |
 |---|---|---|
-| フロントエンド | Cloud Run（`spotcheck-frontend`） | Next.js standalone。HTTPSのURLが自動発行される |
-| バックエンド | Cloud Run（`spotcheck-backend`） | FastAPI。YOLO同梱のためメモリ2Gi |
+| フロントエンド | Cloud Run（`spotcheck-frontend`） | メモリ1Gi / max-instances 5。Next.js standalone |
+| バックエンド | Cloud Run（`spotcheck-backend`） | メモリ2Gi / CPU2 / timeout 900s / concurrency 20 / max-instances 3 |
 | DB | **Supabase の PostgreSQL** | Cloud SQL は使わない（無料枠で足りるため） |
 | 画像ストレージ | Supabase Storage | ローカル開発と同じ |
 
 > **Cloud SQL を使わない理由**: 無料枠が無く月$10前後かかる。Supabase の PostgreSQL は
 > すでに Storage で契約しており、無料枠で足りる。
+
+**バックエンドの timeout を 900秒にしているのは、検品が実測30秒〜15分かかるため。**
+ただし検品自体は `BackgroundTasks` で走り、APIは即座に `202` を返す。
+
+### 1.1 イメージ
+
+| | 内容 |
+|---|---|
+| バックエンド | `python:3.13-slim`。OpenCV 用に `libgl1` / `libglib2.0-0` を入れる |
+| | **CPU版 PyTorch を先に入れる。** ultralytics は既定でCUDA付き torch を引くが、Cloud Run はGPUを持たないため数GBのCUDAライブラリが完全に無駄になる |
+| | 重み（`models_weights/*.pt`）はイメージへ焼き込む。無い場合はマスキングをスキップして動く |
+| フロントエンド | `node:22-slim` の3段ビルド。`output: "standalone"` で実行イメージを小さくする |
+| | `NEXT_PUBLIC_*` を `ARG` → `ENV` で受け、**ビルド時に埋め込む** |
+
+どちらも Cloud Run が渡す `$PORT`（既定8080）で待ち受ける。
+
+### 1.2 接続プールへの対応（`app/core/db.py`）
+
+本番は Supabase の transaction pooler（PgBouncer, 6543番）を経由する。
+このモードでは1トランザクションごとに背後の接続が切り替わるため、
+psycopg3 の**サーバー側プリペアドステートメントを無効化**している（`prepare_threshold=None`）。
+
+無効化しないと次のエラーが出る。psycopg3 は既定で同じSQLを5回実行するとプリペアドに切り替えるため、
+**最初の数回は成功し、その後だけ失敗する**という分かりにくい壊れ方をする。
+
+```
+psycopg.errors.InvalidSqlStatementName: prepared statement "_pg3_1" does not exist
+```
+
+直接接続（ローカル開発）でも無効のままで問題なく、失うのは小さな最適化だけ。
 
 ### 費用の目安
 
@@ -134,15 +178,17 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 
 ---
 
-## 3. マイグレーション
+## 3. マイグレーションとシード
 
-Cloud Run へ上げる前に、Supabase の DB へスキーマを作る。**ローカルから実行する。**
+自動デプロイはマイグレーションを流すが、**シード（デモアカウント）は流さない。**
+初回だけローカルから実行する。
 
 ```bash
 cd backend
 DATABASE_URL="<deploy/env.sh と同じ値>" ./.venv/bin/alembic upgrade head
 DATABASE_URL="<同じ値>" ./.venv/bin/python -m scripts.seed_demo_users
 DATABASE_URL="<同じ値>" ./.venv/bin/python -m scripts.seed_demo_tasks   # 任意
+DATABASE_URL="<同じ値>" ./.venv/bin/python -m scripts.init_storage      # バケット作成
 ```
 
 > ローカルのDBとは別なので、**デモアカウントの投入を忘れるとログインできない。**
@@ -213,11 +259,15 @@ gcloud run services update spotcheck-backend --region asia-northeast1 \
 - DB: Supabase PostgreSQL 17.6（`aws-0-ap-northeast-2.pooler.supabase.com:6543`）
 - 画面6種すべて200、ログイン・投稿一覧4件・サムネイル配信（99KB）を確認
 
+デモ用のQRコードは `deploy/make_qr.py` で作る（`docs/assets/demo-qr.png`）。
+
 ### 5.2 確認手順
 
 ```bash
 curl -s https://spotcheck-backend-xxxx.run.app/api/health | python3 -m json.tool
 ```
+
+`status` が `degraded` の場合は `configWarnings` に不足している環境変数が出る。
 
 ブラウザ（スマホ含む）でフロントのURLを開き、次を確認する。
 
@@ -226,6 +276,7 @@ curl -s https://spotcheck-backend-xxxx.run.app/api/health | python3 -m json.tool
 - 「さがす」で地図と地名検索
 - 依頼作成でストリートビュー
 - **撮影画面でカメラが起動する**（HTTPSなので動く）
+- お知らせタブに通知が届く
 
 ---
 
@@ -248,6 +299,10 @@ URLを共有すると、アクセス数に応じて課金されうる。以下�
 > Places API の1日上限は `BillableDefaultPerDayPerProject` が存在しないため、
 > `AutocompletePlacesRequestPerDayPerProject` と `GetPlaceRequestPerDayPerProject` を個別に設定する。
 
+**OrcaRouter の課金にも注意する。** 用途ごとにモデルを指定し、合議を有効にしているため、
+1件の依頼審査で最大3回、境界にかかった検品でさらに2回の呼び出しが発生する
+（`docs/04-ai-pipeline.md` 1.2）。デモ前に温存したい場合は `ORCA_STUB_MODE=true` にする。
+
 ### サーバー用キーを分ける理由
 
 ブラウザ用キーにリファラー制限を掛けると、**リファラーを送らないサーバーからの呼び出しは拒否される**。
@@ -259,8 +314,9 @@ URLを共有すると、アクセス数に応じて課金されうる。以下�
 
 | 項目 | 内容 |
 |---|---|
-| コールドスタート | バックエンドはYOLO同梱で初回応答に数十秒かかることがある。発表前は `BACKEND_MIN_INSTANCES=1` にして温めておく |
+| コールドスタート | バックエンドはYOLO同梱で初回応答に数十秒かかることがある。発表前は `BACKEND_MIN_INSTANCES=1` にして温めておく。フロント側も GET を1回だけ再試行して吸収する（`lib/api/client.ts`） |
 | 秘密情報 | `deploy/env.sh` はコミットしない。より厳密にやるなら Secret Manager へ移す |
 | ログ | `gcloud run services logs read spotcheck-backend --region asia-northeast1 --limit 50` |
+| AI呼び出しの追跡 | `ai_invocations` テーブルに purpose / model / latency / error が残る（`docs/02-database.md` 2.7） |
 | ロールバック | Cloud Run はリビジョン管理されるため、コンソールから前のリビジョンへトラフィックを戻せる |
 | 削除 | `gcloud run services delete spotcheck-backend spotcheck-frontend --region asia-northeast1` |
