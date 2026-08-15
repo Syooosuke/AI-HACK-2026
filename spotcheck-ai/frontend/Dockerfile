@@ -31,10 +31,11 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080
 
-# standalone 出力には必要な node_modules が同梱される
-# （このアプリは public/ を使っておらず、favicon は src/app に置いている）
+# standalone 出力には必要な node_modules が同梱されるが、public/ と
+# .next/static は含まれないため、実行イメージへ明示的にコピーする。
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 
 EXPOSE 8080
 CMD ["sh", "-c", "node server.js"]

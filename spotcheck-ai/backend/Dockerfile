@@ -1,7 +1,7 @@
 # SpotCheck AI バックエンド（FastAPI）を Cloud Run で動かすためのイメージ。
 #
 # - YOLO（ultralytics）を同梱するため、OpenCV が必要とする共有ライブラリを入れる
-# - 重み（models_weights/*.pt）はイメージへ焼き込む。無い場合はマスキングをスキップして動く
+# - YOLO重みは固定URLから取得・検証し、イメージへ焼き込む
 # - Cloud Run は環境変数 PORT で待受ポートを渡してくるため、それに従う
 
 FROM python:3.13-slim AS base
@@ -32,12 +32,15 @@ COPY pyproject.toml ./
 RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt && \
     pip install -r /tmp/requirements.txt
 
+# Gitには置かないYOLO重みを取得し、SHA-256検証後にイメージへ含める。
+# スクリプトだけを先にコピーして、アプリ変更時にもこのレイヤを再利用する。
+COPY scripts/download_yolo_models.py ./scripts/download_yolo_models.py
+RUN python scripts/download_yolo_models.py
+
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY scripts ./scripts
-# 重みは任意。存在すればコピーされる（`models_weights/` 自体は必ず作る）
-COPY models_weights ./models_weights
 
 # Cloud Run は $PORT（既定8080）で待ち受けることを要求する
 ENV PORT=8080
