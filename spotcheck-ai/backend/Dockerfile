@@ -8,8 +8,7 @@ FROM python:3.13-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    YOLO_CONFIG_DIR=/tmp/Ultralytics
+    PIP_NO_CACHE_DIR=1
 
 # OpenCV（ultralytics 依存）の実行に必要な最小限のライブラリ
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,16 +32,12 @@ COPY pyproject.toml ./
 RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt && \
     pip install -r /tmp/requirements.txt
 
-# マスキング用YOLOモデルを固定バージョンから取得し、ハッシュを検証する。
-# ローカルで同名の正しい重みが配置されていれば、ダウンロードせずそのまま利用する。
-COPY models_weights ./models_weights
-COPY scripts/download_yolo_models.py ./scripts/download_yolo_models.py
-RUN python scripts/download_yolo_models.py
-
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY scripts ./scripts
+# 重みは任意。存在すればコピーされる（`models_weights/` 自体は必ず作る）
+COPY models_weights ./models_weights
 
 # Cloud Run は $PORT（既定8080）で待ち受けることを要求する
 ENV PORT=8080
