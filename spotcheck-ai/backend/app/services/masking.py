@@ -113,7 +113,9 @@ async def apply_masking(
     settings = get_settings()
     models = load_models()
 
-    if models.general is None and models.face is None:
+    # スタブでは画像を解析できないため、YOLOも無い場合だけ従来どおりスキップする。
+    # 実OrcaRouterが有効なら、YOLO重みが無くてもVLMの座標検出でマスキングを続行する。
+    if models.general is None and models.face is None and orca.is_stub:
         logger.warning(models.reason or "マスキングをスキップします")
         return MaskingOutcome(
             image=image_bytes,
@@ -140,19 +142,14 @@ async def apply_masking(
         _blur_region(image, expanded, settings.blur_kernel_ratio)
         regions.append(_region("face", "yolo_face", expanded, width, height, blurred=True))
 
+    # 一般モデルの推論は1回だけ行い、結果を人物と車両へ振り分ける。
+    general_detections = _detect(models.general, image, settings.yolo_confidence_threshold)
+
     # --- 人物（ぼかさない。検出結果のみ記録） --------------------------------
-    person_boxes = [
-        box
-        for box, label in _detect(models.general, image, settings.yolo_confidence_threshold)
-        if label == "person"
-    ]
+    person_boxes = [box for box, label in general_detections if label == "person"]
 
     # --- 車両（プレート探索のヒントとして使う） ------------------------------
-    vehicle_boxes = [
-        box
-        for box, label in _detect(models.general, image, settings.yolo_confidence_threshold)
-        if label in VEHICLE_CLASSES
-    ]
+    vehicle_boxes = [box for box, label in general_detections if label in VEHICLE_CLASSES]
 
     # --- ナンバープレート・表札（VLMへ座標を問い合わせる） --------------------
     plate_count = 0
@@ -196,6 +193,9 @@ async def apply_masking(
         "plate_count": plate_count,
         "processing_ms": _elapsed_ms(started),
     }
+    if models.general is None and models.face is None:
+        result["yolo_skipped"] = True
+        result["yolo_skip_reason"] = models.reason
     if vlm_error:
         result["vlm_error"] = vlm_error
 
@@ -226,6 +226,7 @@ async def _ask_privacy_regions(
         response_schema=PrivacyRegionList,
         images=[ImageInput(base64_data=encode_image_for_vlm(image_bytes))],
         tier="vision",
+        model_key="masking",
         max_tokens=COORDINATE_MAX_TOKENS,
         related_type="submission",
         related_id=submission_id,

@@ -3,14 +3,14 @@
 /** 画面② AIリクエスト審査（docs/05-frontend.md 画面②）。 */
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { ScorePanel } from "@/components/task/ScorePanel";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
-import { resubmitTask } from "@/lib/api/tasks";
+import { getTaskReview, resubmitTask } from "@/lib/api/tasks";
 import { formatCoords } from "@/lib/geo";
 import { clearReview, loadReview, saveReview } from "@/lib/reviewHandoff";
 import type { TaskReviewResponse } from "@/types/api";
@@ -19,6 +19,7 @@ const AUTO_REDIRECT_MS = 3000;
 
 export default function ReviewPage() {
   const router = useRouter();
+  const taskId = useSearchParams().get("taskId");
   const toast = useToast();
   const [data, setData] = useState<TaskReviewResponse | null | undefined>(undefined);
   const [description, setDescription] = useState("");
@@ -26,11 +27,30 @@ export default function ReviewPage() {
 
   useEffect(() => {
     const review = loadReview();
-    setData(review);
-    if (review?.review.decision === "needs_info") {
-      setDescription(review.task.description);
+    if (review && (!taskId || review.task.id === taskId)) {
+      setData(review);
+      if (review.review.decision === "needs_info") {
+        setDescription(review.task.description);
+      }
+      return;
     }
-  }, []);
+    if (!taskId) {
+      setData(null);
+      return;
+    }
+    getTaskReview(taskId)
+      .then((result) => {
+        saveReview(result);
+        setData(result);
+        if (result.review.decision === "needs_info") {
+          setDescription(result.task.description);
+        }
+      })
+      .catch((cause) => {
+        toast.error(toMessage(cause));
+        setData(null);
+      });
+  }, [taskId, toast]);
 
   // approved のときは3秒後に画面③へ自動遷移する
   useEffect(() => {

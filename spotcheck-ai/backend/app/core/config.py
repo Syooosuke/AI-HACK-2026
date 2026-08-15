@@ -56,12 +56,44 @@ class Settings(BaseSettings):
     # --- OrcaRouter（docs/04-ai-pipeline.md 1節）---
     orca_api_base_url: str = "https://api.orcarouter.ai/v1"
     orca_api_key: str = ""
-    # model に渡すのは「ルーター名」。モデル名をコードへ直書きしない。
+    # 用途別の指定が無いときの既定。light=テキストのみ / vision=画像を含む
     orca_router_light: str = "orcarouter/auto"
     orca_router_vision: str = "orcarouter/auto"
     orca_timeout_seconds: int = 60
     orca_max_retries: int = 2
     orca_stub_mode: bool = False
+
+    # --- 用途ごとのモデル指定（docs/04-ai-pipeline.md 1.2）---
+    #
+    # **「間違えたときの損失」で割り当てを変えるための設定。**
+    # 空なら上の tier 既定へフォールバックする。ルーター名（orcarouter/auto）でも
+    # モデルID（anthropic/claude-opus-5）でも指定できる。
+    #
+    # `orcarouter/auto` の中身は予告なく変わる（仕様書の記述と実体が食い違っていた）。
+    # 品質の低下に気づけないため、**重要な用途では明示指定する**こと。
+    #: 依頼審査。犯罪目的の見落としは取り返しがつかない
+    orca_model_task_review: str = ""
+    #: 画像検品。プロダクトの中核
+    orca_model_image_validation: str = ""
+    #: マスキングの座標問い合わせ。顔・ナンバー・表札の位置
+    orca_model_masking: str = ""
+    #: 調査結果の総括。クライアントが読む文章
+    orca_model_result_summary: str = ""
+    #: 依頼タイトルからの詳細メッセージ生成。利用者が後から直せる
+    orca_model_task_description: str = ""
+    #: サムネイル用の情景説明。失敗しても表示に影響しない
+    orca_model_thumbnail: str = ""
+
+    # --- 冗長化（多数決）---
+    #
+    # 同じ画像・同じプロンプト・temperature 0.2 でもスコアが 30 と 95 に割れる事象を
+    # 実測したため、**重要な判定は1回の呼び出しに賭けない**。
+    #: 依頼審査の合議に加える追加モデル（カンマ区切り）。空なら単独判定
+    orca_review_jury: str = ""
+    #: 検品の再判定に使う追加モデル（カンマ区切り）。空なら再判定しない
+    orca_validation_jury: str = ""
+    #: スコアがしきい値からこの幅に入ったら再判定する（境界だけ厚くする）
+    orca_validation_boundary: int = 15
 
     # --- 投稿カードのタグ判定 ---
     #: 作成からこの時間以内は NEW タグを出す
@@ -83,7 +115,10 @@ class Settings(BaseSettings):
 
     # --- 判定パラメータ ---
     task_review_score_threshold: int = 70
-    submission_score_threshold: int = 70
+    # 現地で1枚撮るだけのワーカーが達成できる水準にする（docs/04-ai-pipeline.md 3.1）。
+    # 対象が写っていて状態が読み取れれば70点以上が出る採点基準なので、
+    # 構図や明るさの粗さで数点落ちても合格が残るよう60を下限にする
+    submission_score_threshold: int = 60
     max_retake_count: int = 2
     location_tolerance_meters: float = 100.0
     timestamp_tolerance_seconds: int = 300
@@ -148,8 +183,29 @@ class Settings(BaseSettings):
 
     @property
     def orca_stub_enabled(self) -> bool:
-        """スタブモードで動作するか（docs/04-ai-pipeline.md 1.4）。"""
+        """スタブモードで動作するか（docs/04-ai-pipeline.md 1.5）。"""
         return self.orca_stub_mode or not self.orca_api_key
+
+    def orca_model_for(self, key: str, *, tier: Literal["light", "vision"]) -> str:
+        """用途に割り当てられたモデル名。未設定なら tier の既定へ落とす。"""
+        override = getattr(self, f"orca_model_{key}", "")
+        if override:
+            return override
+        return self.orca_router_vision if tier == "vision" else self.orca_router_light
+
+    @staticmethod
+    def _split_models(value: str) -> list[str]:
+        return [name.strip() for name in value.split(",") if name.strip()]
+
+    @property
+    def orca_review_jury_models(self) -> list[str]:
+        """依頼審査の合議に加えるモデル。"""
+        return self._split_models(self.orca_review_jury)
+
+    @property
+    def orca_validation_jury_models(self) -> list[str]:
+        """検品の再判定に使うモデル。"""
+        return self._split_models(self.orca_validation_jury)
 
 
 @lru_cache

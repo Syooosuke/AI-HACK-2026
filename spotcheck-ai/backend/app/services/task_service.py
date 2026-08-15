@@ -36,6 +36,7 @@ from app.schemas.task import (
     MyAssignmentItem,
     NearbyTask,
     ReferenceImage,
+    ReviewResult,
     TaskDetail,
     TaskDuplicateRequest,
     TaskListItem,
@@ -673,6 +674,27 @@ def _get_owned_task(session: Session, task_id: uuid.UUID, client: User) -> Task:
     if task.client_id != client.id:
         raise Forbidden("他のクライアントの依頼は操作できません。")
     return task
+
+
+def get_task_review(session: Session, *, client: User, task_id: uuid.UUID) -> TaskReviewResponse:
+    """保存済みの依頼審査結果を、画面②で再表示できる形に復元する。"""
+    task = _get_owned_task(session, task_id, client)
+    feedback = task.review_feedback
+    if not feedback or task.review_score is None:
+        raise NotFound("この依頼の審査結果が見つかりません。", code="TASK_REVIEW_NOT_FOUND")
+
+    return TaskReviewResponse(
+        task=_to_summary(task),
+        review=ReviewResult.model_validate(
+            {
+                "decision": feedback.get("decision"),
+                "score": task.review_score,
+                "checks": feedback.get("checks"),
+                "missingInfo": feedback.get("missingInfo", []),
+                "rejectionReason": feedback.get("rejectionReason"),
+            }
+        ),
+    )
 
 
 def _to_summary(task: Task) -> TaskSummary:

@@ -5,7 +5,6 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { PollingIndicator } from "@/components/task/PollingIndicator";
 import { EmptyState, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
@@ -15,12 +14,13 @@ import {
   markNotificationRead,
 } from "@/lib/api/notifications";
 import { formatRelative } from "@/lib/datetime";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { NotificationItem, NotificationType } from "@/types/api";
 
 const POLL_INTERVAL_MS = 10_000;
+const NOTIFICATIONS_PER_PAGE = 10;
 
-/** 取得がこれより長引いたときだけ、読み込み中の表示を出す。 */
-const SLOW_FETCH_MS = 800;
+const NOTIFICATIONS_CACHE_KEY = "notifications";
 
 const TYPE_ICON: Record<NotificationType, string> = {
   task_approved: "✅",
@@ -34,17 +34,23 @@ const TYPE_ICON: Record<NotificationType, string> = {
   task_expired: "⌛",
 };
 
-/** 依頼者向けの通知は依頼の進行状況画面へ、ワーカー向けは受注中タスクの状況画面へ。 */
+/** 通知を開いたとき、その内容を確認・操作できる画面へ遷移する。 */
 function routeFor(notification: NotificationItem): string | null {
   if (!notification.taskId) return null;
   switch (notification.type) {
-    // 再撮影の指示は「撮り直す」ことが次の行動なので、カメラへ直接入る。
-    // 検品結果を見に行かせると、そこから撮影画面へ移る操作が1つ増える
-    case "submission_retake":
-      return `/jobs/${notification.taskId}/capture`;
+    case "task_needs_info":
+    case "task_rejected":
+      return `/requests/new/review?taskId=${notification.taskId}`;
+    case "task_completed":
+      return `/requests/${notification.taskId}/results`;
+    // 提出系は対象の提出IDがないと検品結果を表示できない。
+    // 古いデータなどでIDがない場合だけ、受注詳細へフォールバックする。
     case "submission_approved":
+    case "submission_retake":
     case "submission_failed":
-      return `/jobs/${notification.taskId}/status`;
+      return notification.submissionId
+        ? `/jobs/${notification.taskId}/status?submissionId=${notification.submissionId}`
+        : `/jobs/${notification.taskId}`;
     default:
       return `/requests/${notification.taskId}`;
   }
@@ -53,21 +59,18 @@ function routeFor(notification: NotificationItem): string | null {
 export default function NotificationsPage() {
   const router = useRouter();
   const toast = useToast();
-  const [notifications, setNotifications] = useState<NotificationItem[] | null>(null);
-  const [loadingSlow, setLoadingSlow] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[] | null>(() =>
+    getPageCache<NotificationItem[]>(NOTIFICATIONS_CACHE_KEY) ?? null,
+  );
+  const [currentPage, setCurrentPage] = useState(1);
 
   const load = useCallback(
     async (options: { silent?: boolean } = {}) => {
-      // 取得がこの時間を超えたときだけ「確認しています」を出す
-      const slowTimer = window.setTimeout(() => setLoadingSlow(true), SLOW_FETCH_MS);
       try {
         const { notifications: items } = await listNotifications();
         setNotifications(items);
       } catch (cause) {
         if (!options.silent) toast.error(toMessage(cause));
-      } finally {
-        window.clearTimeout(slowTimer);
-        setLoadingSlow(false);
       }
     },
     [toast],
@@ -79,7 +82,30 @@ export default function NotificationsPage() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    if (notifications) setPageCache(NOTIFICATIONS_CACHE_KEY, notifications);
+  }, [notifications]);
+
   const unreadCount = notifications?.filter((item) => !item.readAt).length ?? 0;
+  const totalPages = Math.max(
+    1,
+    Math.ceil((notifications?.length ?? 0) / NOTIFICATIONS_PER_PAGE),
+  );
+  const pageNotifications =
+    notifications?.slice(
+      (currentPage - 1) * NOTIFICATIONS_PER_PAGE,
+      currentPage * NOTIFICATIONS_PER_PAGE,
+    ) ?? [];
+
+  // 自動更新などで件数が減ったとき、存在しないページを表示し続けない。
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  const moveToPage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const openNotification = (notification: NotificationItem) => {
     if (!notification.readAt) {
@@ -138,7 +164,7 @@ export default function NotificationsPage() {
         <EmptyState message="お知らせはまだありません。検品結果は「マイページ」から確認できます。" />
       ) : (
         <ul className="space-y-2">
-          {notifications.map((notification) => (
+          {pageNotifications.map((notification) => (
             <li key={notification.id}>
               <button
                 type="button"
@@ -172,12 +198,41 @@ export default function NotificationsPage() {
         </ul>
       )}
 
-      {/*
-        自動更新は10秒ごとに静かに走る。取得はふつう一瞬で終わるので、
-        「確認しています」を常時出しても情報にならず、動き続けるスピナーが目障りになる。
-        **もたついたときだけ**出す（下の SLOW_FETCH_MS）。
-      */}
-      {loadingSlow && <PollingIndicator label="最新のお知らせを確認しています" />}
+      {notifications.length > NOTIFICATIONS_PER_PAGE && (
+        <nav aria-label="お知らせのページ" className="flex items-center justify-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => moveToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            前へ
+          </button>
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+            <button
+              key={page}
+              type="button"
+              onClick={() => moveToPage(page)}
+              aria-current={currentPage === page ? "page" : undefined}
+              className={`h-9 min-w-9 rounded-lg px-2 text-xs font-bold transition ${
+                currentPage === page
+                  ? "bg-client text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => moveToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            次へ
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

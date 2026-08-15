@@ -40,6 +40,18 @@ Purpose = Literal[
 ]
 Tier = Literal["light", "vision"]
 
+#: 用途ごとのモデル指定に使うキー（Settings.orca_model_<key> と対応させる）。
+#: `Purpose` と1対1にしないのは、マスキングが image_validation と同じ purpose を
+#: 使いながら別モデルを割り当てられるようにするため。
+ModelKey = Literal[
+    "task_review",
+    "image_validation",
+    "masking",
+    "result_summary",
+    "task_description",
+    "thumbnail",
+]
+
 STUB_MODEL_NAME = "stub"
 CHAT_COMPLETIONS_PATH = "/chat/completions"
 
@@ -80,7 +92,7 @@ class ImageInput:
     media_type: str = "image/jpeg"
 
     def to_log_payload(self) -> str:
-        """ログには base64 を残さない（docs/04-ai-pipeline.md 1.3）。"""
+        """ログには base64 を残さない（docs/04-ai-pipeline.md 1.4）。"""
         return self.url or "<image omitted>"
 
     def to_data_uri(self) -> str:
@@ -156,8 +168,13 @@ class OrcaClient:
     def is_stub(self) -> bool:
         return self._settings.orca_stub_enabled
 
-    def router_name(self, tier: Tier) -> str:
-        """`model` に渡すルーター名。モデル名をコードへ直書きしない（1.1節）。"""
+    def router_name(self, tier: Tier, model_key: ModelKey | None = None) -> str:
+        """`model` に渡す値。モデル名をコードへ直書きしない（1.1節）。
+
+        用途別の指定（`ORCA_MODEL_*`）があればそれを、無ければ tier の既定を使う。
+        """
+        if model_key is not None:
+            return self._settings.orca_model_for(model_key, tier=tier)
         return (
             self._settings.orca_router_vision
             if tier == "vision"
@@ -165,7 +182,7 @@ class OrcaClient:
         )
 
     def _http(self) -> httpx.AsyncClient:
-        """httpx.AsyncClient はアプリのライフサイクルで使い回す（1.3節）。"""
+        """httpx.AsyncClient はアプリのライフサイクルで使い回す（1.4節）。"""
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self._settings.orca_api_base_url.rstrip("/"),
@@ -187,6 +204,8 @@ class OrcaClient:
         response_schema: type[BaseModel],
         images: list[ImageInput] | None = None,
         tier: Tier = "light",
+        model_key: ModelKey | None = None,
+        model: str | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         related_type: str | None = None,
         related_id: uuid.UUID | None = None,
@@ -195,10 +214,16 @@ class OrcaClient:
     ) -> OrcaResult:
         """JSONを返すAI呼び出し。`response_schema` でバリデートした結果を返す。
 
+        送信先の決め方は次の優先順位。
+        1. `model`（多数決で個別のモデルを指名するときに使う）
+        2. `model_key` に割り当てられた `ORCA_MODEL_*`
+        3. `tier` の既定（`ORCA_ROUTER_LIGHT` / `ORCA_ROUTER_VISION`）
+
         `context` はスタブ応答の分岐に使う補助情報（例: `attempt_no`）。
         実呼び出しでは送信せず、監査ログにのみ含める。
         """
         started = time.perf_counter()
+        target = model or self.router_name(tier, model_key)
         request_log = self._build_log_payload(
             purpose=purpose,
             tier=tier,
@@ -207,6 +232,7 @@ class OrcaClient:
             images=images,
             context=context,
             max_tokens=max_tokens,
+            model=target,
         )
 
         try:
@@ -222,9 +248,10 @@ class OrcaClient:
                     response_schema=response_schema,
                     images=images,
                     tier=tier,
+                    model=target,
                     max_tokens=max_tokens,
                 )
-                model = str(raw.get("model") or self.router_name(tier))
+                model = str(raw.get("model") or target)
         except AIServiceError as exc:
             self._record(
                 recorder,
@@ -269,6 +296,7 @@ class OrcaClient:
         response_schema: type[BaseModel],
         images: list[ImageInput] | None,
         tier: Tier,
+        model: str,
         max_tokens: int,
     ) -> tuple[dict[str, Any], BaseModel]:
         messages: list[dict[str, Any]] = [
@@ -281,10 +309,13 @@ class OrcaClient:
 
         for attempt in range(attempts):
             body = {
-                "model": self.router_name(tier),
+                "model": model,
                 "messages": messages,
                 "temperature": TEMPERATURE,
                 "max_tokens": budget,
+                # **JSONの形はプロンプトでお願いせず、APIに強制させる。**
+                # 実測でモデルがJSON以外を返し、解析に失敗する事象を確認したため
+                "response_format": _json_schema_format(response_schema),
             }
             try:
                 response = await self._http().post(CHAT_COMPLETIONS_PATH, json=body)
@@ -300,7 +331,7 @@ class OrcaClient:
                 continue
 
             if self._is_retryable_status(
-                response, purpose=purpose, has_images=bool(images), tier=tier
+                response, purpose=purpose, has_images=bool(images), model=model
             ):
                 last_error = f"AIの呼び出しに失敗しました（HTTP {response.status_code}）。"
                 if not await self._sleep_before_retry(
@@ -353,7 +384,7 @@ class OrcaClient:
         raise AIServiceError(last_error)
 
     def _is_retryable_status(
-        self, response: httpx.Response, *, purpose: Purpose, has_images: bool, tier: Tier
+        self, response: httpx.Response, *, purpose: Purpose, has_images: bool, model: str
     ) -> bool:
         """リトライすべきステータスなら True。リトライ不可なら例外を送出する（1.1節の表）。"""
         status = response.status_code
@@ -377,7 +408,7 @@ class OrcaClient:
                 logger.error(
                     "画像付きリクエストが 400 で拒否されました。"
                     "Vision対応モデルのみを許可したルーターを ORCA_ROUTER_VISION に設定してください",
-                    extra={"router": self.router_name(tier), "purpose": purpose},
+                    extra={"router": model, "purpose": purpose},
                 )
                 raise AIServiceError(
                     "画像を扱えるモデルへルーティングされませんでした。"
@@ -442,11 +473,12 @@ class OrcaClient:
         images: list[ImageInput] | None,
         context: dict[str, Any] | None,
         max_tokens: int,
+        model: str,
     ) -> dict[str, Any]:
         return {
             "purpose": purpose,
             "tier": tier,
-            "model": self.router_name(tier),
+            "model": model,
             "temperature": TEMPERATURE,
             "maxTokens": max_tokens,
             "systemPrompt": system_prompt,
@@ -587,6 +619,58 @@ class OrcaClient:
 # ----------------------------------------------------------------------
 # ヘルパー
 # ----------------------------------------------------------------------
+def _json_schema_format(schema: type[BaseModel]) -> dict[str, Any]:
+    """`response_format` に渡す json_schema を Pydantic モデルから作る。
+
+    **プロンプトで「JSONだけ返して」と頼むのをやめ、APIに形を強制させる。**
+    実測で、指示を無視してJSON以外を返し解析に失敗するモデルがあったため。
+
+    Pydantic の出力をそのまま渡してはならない。アップストリームごとに要求が違い、
+    実測では次の 400 が返った（**リトライでは解決しないため検品が丸ごと落ちる**）。
+
+    - Anthropic 系: `object` に `additionalProperties: false` が無いと拒否する
+    - Gemini 系: `$defs` / `$ref` を解釈できず「Unknown name "$defs"」で拒否する
+      （`ImageValidationResult` のように入れ子のモデルを持つスキーマで発生する）
+
+    どちらの制約も満たす形へ `_normalize_schema()` で正規化する。
+    """
+    raw = schema.model_json_schema()
+    defs = raw.pop("$defs", {})
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema.__name__,
+            "strict": False,
+            "schema": _normalize_schema(raw, defs),
+        },
+    }
+
+
+def _normalize_schema(node: Any, defs: dict[str, Any]) -> Any:
+    """`$ref` を実体へ展開し、オブジェクトに `additionalProperties: false` を明示する。
+
+    このプロジェクトのレスポンススキーマに再帰的な定義は無い前提（あれば展開が止まらない）。
+    """
+    if isinstance(node, list):
+        return [_normalize_schema(item, defs) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        target = defs.get(ref.removeprefix("#/$defs/"), {})
+        # 参照側に付いている説明などを実体へ重ねる
+        merged = {**target, **{key: value for key, value in node.items() if key != "$ref"}}
+        return _normalize_schema(merged, defs)
+
+    normalized = {
+        key: _normalize_schema(value, defs) for key, value in node.items() if key != "$defs"
+    }
+    if normalized.get("type") == "object" or "properties" in normalized:
+        normalized.setdefault("additionalProperties", False)
+    return normalized
+
+
 def _user_content(user_prompt: str, images: list[ImageInput] | None) -> Any:
     """画像がなければ文字列、あれば OpenAI Vision 形式の配列を返す。"""
     if not images:

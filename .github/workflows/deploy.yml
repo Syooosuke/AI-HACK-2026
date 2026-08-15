@@ -89,10 +89,24 @@ jobs:
               "SUPABASE_URL": os.environ["SUPABASE_URL"],
               "SUPABASE_SECRET_KEY": os.environ["SUPABASE_SECRET_KEY"],
               "ORCA_API_KEY": os.environ.get("ORCA_API_KEY", ""),
-              "ORCA_STUB_MODE": os.environ.get("ORCA_STUB_MODE", "true"),
+              "ORCA_STUB_MODE": os.environ.get("ORCA_STUB_MODE", "false"),
               "GOOGLE_MAPS_SERVER_API_KEY": os.environ.get("GOOGLE_MAPS_SERVER_API_KEY", ""),
               "CORS_ORIGINS": os.environ["FRONTEND_URL"],
           }
+          # 用途ごとのモデル指定と冗長化（docs/04-ai-pipeline.md 1.2）。
+          # 未設定のものは渡さず、アプリ側の既定へ落とす
+          for name in (
+              "ORCA_MODEL_TASK_REVIEW",
+              "ORCA_MODEL_IMAGE_VALIDATION",
+              "ORCA_MODEL_MASKING",
+              "ORCA_MODEL_RESULT_SUMMARY",
+              "ORCA_MODEL_TASK_DESCRIPTION",
+              "ORCA_MODEL_THUMBNAIL",
+              "ORCA_REVIEW_JURY",
+              "ORCA_VALIDATION_JURY",
+              "ORCA_VALIDATION_BOUNDARY",
+          ):
+              values[name] = os.environ.get(name, "")
           # 空の値は渡さない（既存の設定を消さないため）
           values = {k: v for k, v in values.items() if v}
           with open("/tmp/backend-env.yaml", "w", encoding="utf-8") as f:
@@ -115,9 +129,19 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ORCA_API_KEY: ${{ secrets.ORCA_API_KEY }}
-          ORCA_STUB_MODE: ${{ vars.ORCA_STUB_MODE || 'true' }}
+          ORCA_STUB_MODE: ${{ vars.ORCA_STUB_MODE || 'false' }}
           GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
           FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          # モデルの割り当ては秘密情報ではないので variables で管理する（変更履歴が追える）
+          ORCA_MODEL_TASK_REVIEW: ${{ vars.ORCA_MODEL_TASK_REVIEW }}
+          ORCA_MODEL_IMAGE_VALIDATION: ${{ vars.ORCA_MODEL_IMAGE_VALIDATION }}
+          ORCA_MODEL_MASKING: ${{ vars.ORCA_MODEL_MASKING }}
+          ORCA_MODEL_RESULT_SUMMARY: ${{ vars.ORCA_MODEL_RESULT_SUMMARY }}
+          ORCA_MODEL_TASK_DESCRIPTION: ${{ vars.ORCA_MODEL_TASK_DESCRIPTION }}
+          ORCA_MODEL_THUMBNAIL: ${{ vars.ORCA_MODEL_THUMBNAIL }}
+          ORCA_REVIEW_JURY: ${{ vars.ORCA_REVIEW_JURY }}
+          ORCA_VALIDATION_JURY: ${{ vars.ORCA_VALIDATION_JURY }}
+          ORCA_VALIDATION_BOUNDARY: ${{ vars.ORCA_VALIDATION_BOUNDARY }}
 
       # NEXT_PUBLIC_* はビルド時にJSへ焼き込まれるため、--build-arg として渡す必要がある。
       # `--build-env-vars` では Docker まで届かず、空文字が埋め込まれてしまう。

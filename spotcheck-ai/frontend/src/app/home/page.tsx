@@ -10,12 +10,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { PlaceSearchBox, type SearchedPlace } from "@/components/map/PlaceSearchBox";
 import { TaskCard } from "@/components/task/TaskCard";
-import { Card, EmptyState, Skeleton } from "@/components/ui";
+import { EmptyState, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { toMessage } from "@/lib/api/errorMessages";
 import { saveSearch } from "@/lib/api/social";
 import { listNearbyTasks } from "@/lib/api/tasks";
 import { env } from "@/lib/env";
+import { getPageCache, setPageCache } from "@/lib/pageCache";
 import type { NearbyTask } from "@/types/api";
 
 type SortKey = "distance" | "reward" | "deadline";
@@ -23,14 +24,26 @@ type SortKey = "distance" | "reward" | "deadline";
 /** 検索範囲の選択肢（km）。バックエンドの許容範囲は 0.5〜50km。 */
 const RADIUS_OPTIONS = [1, 3, 5, 10, 30];
 
+type HomeCache = {
+  sort: SortKey;
+  radiusKm: number;
+  center: typeof env.defaultMapCenter;
+  address: string | null;
+  geoDenied: boolean;
+  tasks: NearbyTask[];
+};
+
+const HOME_CACHE_KEY = "home";
+
 export default function HomePage() {
   const toast = useToast();
-  const [sort, setSort] = useState<SortKey>("distance");
-  const [radiusKm, setRadiusKm] = useState(5);
-  const [center, setCenter] = useState(env.defaultMapCenter);
-  const [address, setAddress] = useState<string | null>(null);
-  const [geoDenied, setGeoDenied] = useState(false);
-  const [tasks, setTasks] = useState<NearbyTask[] | null>(null);
+  const cached = getPageCache<HomeCache>(HOME_CACHE_KEY);
+  const [sort, setSort] = useState<SortKey>(() => cached?.sort ?? "distance");
+  const [radiusKm, setRadiusKm] = useState(() => cached?.radiusKm ?? 5);
+  const [center, setCenter] = useState(() => cached?.center ?? env.defaultMapCenter);
+  const [address, setAddress] = useState<string | null>(() => cached?.address ?? null);
+  const [geoDenied, setGeoDenied] = useState(() => cached?.geoDenied ?? false);
+  const [tasks, setTasks] = useState<NearbyTask[] | null>(() => cached?.tasks ?? null);
   const [saving, setSaving] = useState(false);
 
   // 起動時に現在地を取得する。拒否された場合は既定座標にフォールバックする。
@@ -59,6 +72,19 @@ export default function HomePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tasks) {
+      setPageCache<HomeCache>(HOME_CACHE_KEY, {
+        sort,
+        radiusKm,
+        center,
+        address,
+        geoDenied,
+        tasks,
+      });
+    }
+  }, [address, center, geoDenied, radiusKm, sort, tasks]);
 
   const search = (place: SearchedPlace) => {
     setCenter({ lat: place.lat, lng: place.lng });
@@ -94,7 +120,7 @@ export default function HomePage() {
           {address ?? (geoDenied ? "渋谷駅周辺（現在地を取得できませんでした）" : "現在地の周辺")}
         </p>
         <Link href={mapHref} className="text-xs font-bold text-worker underline">
-          地図で見る
+          地図から探す
         </Link>
       </div>
 
@@ -143,7 +169,7 @@ export default function HomePage() {
           <Skeleton className="aspect-square" />
         </div>
       ) : tasks.length === 0 ? (
-        <EmptyState message="この範囲に募集中の依頼がありません。範囲を広げるか、別の地名で検索してください。" />
+        <EmptyState message="募集中の依頼がありません。範囲を広げるか、別の地名で検索してください。" />
       ) : (
         <>
           <p className="text-xs text-slate-500">{tasks.length}件</p>
@@ -154,13 +180,6 @@ export default function HomePage() {
           </ul>
         </>
       )}
-
-      <Card className="border-dashed">
-        <p className="text-xs text-slate-500">
-          撮影を依頼したいときは下の「依頼する」から作成できます。保存した検索条件といいねした投稿は
-          「いいね」タブにまとまります。
-        </p>
-      </Card>
     </div>
   );
 }

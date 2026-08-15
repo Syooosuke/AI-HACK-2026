@@ -213,6 +213,7 @@ async def _describe_scene(
             response_schema=_SceneDescription,
             images=[ImageInput(base64_data=encode_image_for_vlm(image))],
             tier="vision",
+            model_key="thumbnail",
             recorder=ai_invocation_repo.create_autonomous,
             related_type="task",
             related_id=task.id,
