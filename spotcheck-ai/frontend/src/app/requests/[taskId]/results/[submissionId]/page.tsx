@@ -96,11 +96,6 @@ export default function ResultDetailPage() {
         </Card>
       )}
 
-      <Card className="bg-violet-50/60">
-        <SectionTitle>回答サマリー（AI要約）</SectionTitle>
-        <p className="text-sm leading-relaxed text-slate-700">{result.aiSummary}</p>
-      </Card>
-
       <Card className="space-y-2">
         <SectionTitle>画像（安全処理済み）</SectionTitle>
         {result.processedImageUrl ? (
